@@ -3,6 +3,7 @@ import requests
 import time
 import sys
 import pandas as pd
+import os
 from typing import List, Optional
 from config import BASE_URL, CMC_PAGE_SIZE, CMC_API_KEY, CMC_BASE_URL, load_filtered_symbols_from_file
 from requests.exceptions import ConnectTimeout, ReadTimeout, RequestException
@@ -10,6 +11,19 @@ from requests.exceptions import ConnectTimeout, ReadTimeout, RequestException
 ###############################################################################
 # HELPER: EXPONENTIAL RETRY WRAPPER
 ###############################################################################
+def get_proxy_config():
+    """
+    Get proxy configuration from environment variables.
+    Supports SOCKS5 proxy for NordVPN or other proxy services.
+    """
+    proxy_url = os.getenv('PROXY_URL')
+    if proxy_url:
+        return {
+            'http': proxy_url,
+            'https': proxy_url
+        }
+    return None
+
 def retry_request(
     url: str,
     method: str = "GET",
@@ -19,12 +33,14 @@ def retry_request(
     max_retries: int = 5
 ):
     attempt = 0
+    proxies = get_proxy_config()
+    
     while attempt < max_retries:
         try:
             if method.upper() == "GET":
-                resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+                resp = requests.get(url, params=params, headers=headers, timeout=timeout, proxies=proxies)
             else:
-                resp = requests.post(url, data=params, headers=headers, timeout=timeout)
+                resp = requests.post(url, data=params, headers=headers, timeout=timeout, proxies=proxies)
             resp.raise_for_status()
             return resp
         except (ConnectTimeout, ReadTimeout, RequestException) as e:

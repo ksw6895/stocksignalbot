@@ -1,0 +1,228 @@
+{
+  "project_info": {
+    "name": "Cryptocurrency Real-time Signal Bot",
+    "version": "1.0.0",
+    "description": "주봉 캔들 기반 암호화폐 자동 시그널 봇. 실시간 시가총액 필터링 및 텔레그램 알림 기능",
+    "created_date": "2025-07-15",
+    "author": "ksw6895",
+    "repository": "https://github.com/ksw6895/cryptosignal"
+  },
+  
+  "completed_tasks": {
+    "1_cleanup": {
+      "description": "불필요한 파일 정리",
+      "details": [
+        "주식 관련 파일 모두 삭제 (stocks.py, StockBot.py, config_stocks.py 등)",
+        "백테스트 관련 파일 삭제 (backtest.py, KwontBot.py, analyzeData.py)",
+        "Zone.Identifier 파일들 삭제",
+        "backtest_results 폴더 삭제"
+      ],
+      "status": "completed"
+    },
+    
+    "2_main_bot_implementation": {
+      "description": "실시간 시그널 봇 구현",
+      "details": [
+        "crypto_signal_bot.py 메인 파일 생성",
+        "매시간 자동 스캔 기능",
+        "실시간 시가총액 필터링",
+        "텔레그램 봇 통합"
+      ],
+      "status": "completed"
+    },
+    
+    "3_api_protection": {
+      "description": "API 제한 보호 기능",
+      "details": [
+        "Exponential backoff 구현 (2^n 초, 최대 10분)",
+        "API ban 감지 (418/429 에러 시 1시간 대기)",
+        "적응형 딜레이 (에러율에 따라 속도 조절)",
+        "재시도 로직 (심볼당 3회, 전체 10회)"
+      ],
+      "status": "completed"
+    },
+    
+    "4_deployment_setup": {
+      "description": "24시간 배포 설정",
+      "details": [
+        "render.yaml 생성",
+        ".env.example 생성",
+        ".gitignore 설정",
+        "requirements.txt 최적화",
+        "README.md 작성",
+        "DEPLOYMENT_GUIDE.md 작성"
+      ],
+      "status": "completed"
+    }
+  },
+  
+  "current_architecture": {
+    "main_components": {
+      "crypto_signal_bot.py": {
+        "purpose": "메인 실행 파일",
+        "classes": {
+          "CryptoSignalBot": {
+            "methods": [
+              "get_filtered_symbols() - 실시간 시가총액 필터링",
+              "check_single_symbol() - 개별 심볼 시그널 체크",
+              "scan_all_symbols() - 전체 심볼 스캔",
+              "send_telegram_message() - 텔레그램 알림",
+              "handle_api_error() - API 에러 처리",
+              "wait_if_banned() - API ban 대기"
+            ]
+          }
+        },
+        "features": [
+          "매시간 자동 스캔",
+          "일일 상태 업데이트",
+          "API 제한 자동 처리"
+        ]
+      },
+      
+      "config.py": {
+        "purpose": "설정 관리",
+        "contents": [
+          "API 엔드포인트 설정",
+          "환경 변수 로드",
+          "기본 심볼 목록 관리"
+        ]
+      },
+      
+      "symbols.py": {
+        "purpose": "심볼 및 API 통신 관리",
+        "functions": [
+          "fetch_coinmarketcap_coins_multi_pages() - CMC 데이터 가져오기",
+          "get_valid_binance_symbols() - Binance 유효 심볼 확인",
+          "fetch_candles() - 캔들 데이터 가져오기",
+          "retry_request() - 재시도 로직이 포함된 HTTP 요청"
+        ]
+      },
+      
+      "decision.py": {
+        "purpose": "트레이딩 전략 구현",
+        "strategy": "Kwon Strategy",
+        "functions": [
+          "check_single_peak() - 단일 최고점 식별",
+          "check_bearish_pattern() - 하락 패턴 확인",
+          "kwon_strategy_decision() - 최종 매수 시그널 결정"
+        ],
+        "parameters": {
+          "weekly_window": 5,
+          "ema_periods": [15, 33],
+          "default_tp": "10%",
+          "default_sl": "5%"
+        }
+      },
+      
+      "indicators.py": {
+        "purpose": "기술적 지표 계산",
+        "functions": [
+          "compute_ema_series() - EMA 계산"
+        ]
+      }
+    },
+    
+    "data_flow": [
+      "1. CoinMarketCap API → 시가총액 필터링",
+      "2. Binance API → 유효 거래쌍 확인 (실패해도 진행)",
+      "3. 각 심볼별 주봉 데이터 가져오기",
+      "4. Kwon Strategy로 시그널 분석",
+      "5. 매수 시그널 발견 시 텔레그램 알림"
+    ],
+    
+    "error_handling": {
+      "api_errors": {
+        "rate_limit": "Exponential backoff (2^n초 대기)",
+        "ban_418": "1시간 대기",
+        "connection_error": "최대 10회 재시도"
+      },
+      "fallback_strategy": [
+        "1차: CoinMarketCap 데이터만 사용",
+        "2차: 하드코딩된 주요 20개 코인 사용"
+      ]
+    }
+  },
+  
+  "deployment_status": {
+    "platform": "Render",
+    "issues_encountered": [
+      {
+        "issue": "418 I'm a teapot 에러",
+        "cause": "Binance가 Render IP 차단",
+        "solution": "읽기 전용 API + IP 제한 해제 필요"
+      },
+      {
+        "issue": "filtered_coins.txt 파일 없음",
+        "cause": "초기 설정 파일 누락",
+        "solution": "실시간 필터링으로 대체"
+      }
+    ],
+    "current_status": "Binance API 설정 변경 대기 중"
+  },
+  
+  "environment_variables": {
+    "required": {
+      "BINANCE_API_KEY": "Binance API 키 (읽기 전용)",
+      "BINANCE_API_SECRET": "Binance API 시크릿",
+      "COINMARKETCAP_API_KEY": "CoinMarketCap API 키",
+      "TELEGRAM_BOT_TOKEN": "텔레그램 봇 토큰",
+      "TELEGRAM_CHAT_ID": "텔레그램 채팅 ID"
+    },
+    "optional": {
+      "TP_RATIO": "목표가 비율 (기본값: 0.1)",
+      "SL_RATIO": "손절가 비율 (기본값: 0.05)",
+      "MIN_MARKET_CAP": "최소 시가총액 (기본값: 150000000)",
+      "MAX_MARKET_CAP": "최대 시가총액 (기본값: 20000000000)",
+      "CMC_MAX_PAGES": "CMC 페이지 수 (기본값: 5)"
+    }
+  },
+  
+  "trading_strategy": {
+    "name": "Kwon Strategy (주봉 기반)",
+    "timeframe": "1W (Weekly)",
+    "entry_conditions": [
+      "최근 5개 주봉 내 단일 최고점",
+      "최고점 이후 하락 패턴",
+      "현재 저가가 EMA(15 또는 33) 아래"
+    ],
+    "exit_parameters": {
+      "take_profit": "진입가 + 10%",
+      "stop_loss": "진입가 - 5%"
+    },
+    "signal_expiry": "168시간 (1주일)"
+  },
+  
+  "next_steps": {
+    "immediate": [
+      "Binance API를 읽기 전용 + IP 제한 해제로 설정",
+      "GitHub에 최신 코드 푸시",
+      "Render에서 재배포"
+    ],
+    "future_improvements": [
+      "더 많은 거래소 지원 (Bybit, OKX 등)",
+      "다양한 시간프레임 지원",
+      "백테스트 결과 시각화",
+      "웹 대시보드 추가",
+      "여러 전략 동시 실행"
+    ]
+  },
+  
+  "file_structure": {
+    "root": {
+      "crypto_signal_bot.py": "메인 실행 파일",
+      "config.py": "설정 파일",
+      "symbols.py": "심볼 관리",
+      "decision.py": "전략 로직",
+      "indicators.py": "기술 지표",
+      "requirements.txt": "의존성 목록",
+      ".env.example": "환경 변수 예시",
+      ".gitignore": "Git 제외 설정",
+      "render.yaml": "Render 배포 설정",
+      "runtime.txt": "Python 버전",
+      "build.sh": "빌드 스크립트",
+      "README.md": "사용 가이드",
+      "DEPLOYMENT_GUIDE.md": "배포 가이드",
+      "project_status.json": "프로젝트 현황 (현재 파일)"
+    }
+  }
+}
