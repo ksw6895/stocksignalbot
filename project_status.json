@@ -1,9 +1,10 @@
 {
   "project_info": {
     "name": "Cryptocurrency Real-time Signal Bot",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "주봉 캔들 기반 암호화폐 자동 시그널 봇. 실시간 시가총액 필터링 및 텔레그램 알림 기능",
     "created_date": "2025-07-15",
+    "last_updated": "2025-07-15",
     "author": "ksw6895",
     "repository": "https://github.com/ksw6895/cryptosignal"
   },
@@ -17,7 +18,8 @@
         "Zone.Identifier 파일들 삭제",
         "backtest_results 폴더 삭제"
       ],
-      "status": "completed"
+      "status": "completed",
+      "date": "2025-07-15"
     },
     
     "2_main_bot_implementation": {
@@ -28,7 +30,8 @@
         "실시간 시가총액 필터링",
         "텔레그램 봇 통합"
       ],
-      "status": "completed"
+      "status": "completed",
+      "date": "2025-07-15"
     },
     
     "3_api_protection": {
@@ -39,7 +42,8 @@
         "적응형 딜레이 (에러율에 따라 속도 조절)",
         "재시도 로직 (심볼당 3회, 전체 10회)"
       ],
-      "status": "completed"
+      "status": "completed",
+      "date": "2025-07-15"
     },
     
     "4_deployment_setup": {
@@ -52,14 +56,116 @@
         "README.md 작성",
         "DEPLOYMENT_GUIDE.md 작성"
       ],
-      "status": "completed"
+      "status": "completed",
+      "date": "2025-07-15"
+    },
+    
+    "5_proxy_implementation": {
+      "description": "프록시 지원 추가",
+      "details": [
+        "SOCKS5/HTTP 프록시 지원 구현",
+        "선택적 프록시 사용 (Binance API만)",
+        "프록시 실패 시 자동 fallback",
+        "NordVPN 설정 가이드 작성"
+      ],
+      "status": "completed",
+      "date": "2025-07-15"
+    },
+    
+    "6_deployment_troubleshooting": {
+      "description": "배포 문제 해결",
+      "details": [
+        "Render IP 차단 문제 확인 (418 에러)",
+        "프록시 연결 실패 분석 (SOCKS 타임아웃)",
+        "로컬 실행 환경 설정 (WSL 가상환경)",
+        "대체 배포 플랫폼 조사 및 설정 파일 생성"
+      ],
+      "status": "completed",
+      "date": "2025-07-15"
+    },
+    
+    "7_google_cloud_migration": {
+      "description": "Google Cloud Run 마이그레이션",
+      "details": [
+        "프록시 관련 코드 완전 제거",
+        "Cloud Run용 Flask wrapper 추가",
+        "Dockerfile 및 .dockerignore 생성",
+        "requirements.txt 정리",
+        "상세한 배포 가이드 작성"
+      ],
+      "status": "completed",
+      "date": "2025-07-15"
     }
+  },
+  
+  "current_issues": {
+    "resolved": {
+      "render_deployment": "Google Cloud Run으로 마이그레이션 완료",
+      "proxy_limitations": "프록시 불필요 - Google Cloud IP는 Binance에서 허용"
+    }
+  },
+  
+  "deployment_alternatives": {
+    "tested_platforms": {
+      "render": {
+        "status": "실패",
+        "reason": "IP 차단, SOCKS 프록시 차단"
+      },
+      "local_wsl": {
+        "status": "성공",
+        "pros": "IP 차단 없음, 완전한 제어",
+        "cons": "24시간 컴퓨터 켜놓아야 함"
+      }
+    },
+    
+    "recommended_platforms": {
+      "railway": {
+        "priority": 1,
+        "pros": "Render와 유사, $5 무료 크레딧, 다른 IP 대역",
+        "config_file": "railway.toml"
+      },
+      "google_cloud_run": {
+        "priority": 1,
+        "pros": "$300 무료 크레딧, 안정적, Binance 차단 없음",
+        "cons": "초기 설정 복잡",
+        "status": "IMPLEMENTED - 배포 준비 완료"
+      },
+      "fly_io": {
+        "priority": 3,
+        "pros": "전세계 리전 선택 가능",
+        "config_file": "fly.toml"
+      },
+      "oracle_cloud": {
+        "priority": 4,
+        "pros": "영구 무료 VM",
+        "cons": "설정 매우 복잡"
+      }
+    }
+  },
+  
+  "technical_improvements": {
+    "implemented": [
+      "환경 변수 검증 로깅",
+      "프록시 설정 디버그 출력",
+      "프록시 실패 시 자동 직접 연결",
+      "상세한 에러 메시지"
+    ],
+    
+    "planned": [
+      "여러 프록시 서버 자동 전환",
+      "API 응답 캐싱으로 요청 수 감소",
+      "웹소켓 연결로 실시간 모니터링"
+    ]
   },
   
   "current_architecture": {
     "main_components": {
       "crypto_signal_bot.py": {
         "purpose": "메인 실행 파일",
+        "recent_updates": [
+          "프록시 관련 코드 모두 제거",
+          "Google Cloud Run 배포 최적화"
+        },
         "classes": {
           "CryptoSignalBot": {
             "methods": [
@@ -90,11 +196,16 @@
       
       "symbols.py": {
         "purpose": "심볼 및 API 통신 관리",
+        "recent_updates": [
+          "프록시 관련 코드 완전 제거",
+          "순수 HTTP 요청으로 단순화"
+        },
         "functions": [
           "fetch_coinmarketcap_coins_multi_pages() - CMC 데이터 가져오기",
           "get_valid_binance_symbols() - Binance 유효 심볼 확인",
           "fetch_candles() - 캔들 데이터 가져오기",
-          "retry_request() - 재시도 로직이 포함된 HTTP 요청"
+          "retry_request() - 재시도 로직이 포함된 HTTP 요청",
+          "get_proxy_config() - 프록시 설정 가져오기"
         ]
       },
       
@@ -134,30 +245,14 @@
       "api_errors": {
         "rate_limit": "Exponential backoff (2^n초 대기)",
         "ban_418": "1시간 대기",
-        "connection_error": "최대 10회 재시도"
+        "connection_error": "최대 10회 재시도",
+        "proxy_failure": "직접 연결로 자동 전환"
       },
       "fallback_strategy": [
         "1차: CoinMarketCap 데이터만 사용",
         "2차: 하드코딩된 주요 20개 코인 사용"
       ]
     }
-  },
-  
-  "deployment_status": {
-    "platform": "Render",
-    "issues_encountered": [
-      {
-        "issue": "418 I'm a teapot 에러",
-        "cause": "Binance가 Render IP 차단",
-        "solution": "읽기 전용 API + IP 제한 해제 필요"
-      },
-      {
-        "issue": "filtered_coins.txt 파일 없음",
-        "cause": "초기 설정 파일 누락",
-        "solution": "실시간 필터링으로 대체"
-      }
-    ],
-    "current_status": "Binance API 설정 변경 대기 중"
   },
   
   "environment_variables": {
@@ -173,7 +268,8 @@
       "SL_RATIO": "손절가 비율 (기본값: 0.05)",
       "MIN_MARKET_CAP": "최소 시가총액 (기본값: 150000000)",
       "MAX_MARKET_CAP": "최대 시가총액 (기본값: 20000000000)",
-      "CMC_MAX_PAGES": "CMC 페이지 수 (기본값: 5)"
+      "CMC_MAX_PAGES": "CMC 페이지 수 (기본값: 5)",
+      "PROXY_URL": "프록시 URL (선택사항)"
     }
   },
   
@@ -194,35 +290,71 @@
   
   "next_steps": {
     "immediate": [
-      "Binance API를 읽기 전용 + IP 제한 해제로 설정",
-      "GitHub에 최신 코드 푸시",
-      "Render에서 재배포"
-    ],
-    "future_improvements": [
-      "더 많은 거래소 지원 (Bybit, OKX 등)",
-      "다양한 시간프레임 지원",
-      "백테스트 결과 시각화",
-      "웹 대시보드 추가",
-      "여러 전략 동시 실행"
+      "Google Cloud 프로젝트 생성",
+      "Docker 이미지 빌드 및 Artifact Registry 푸시",
+      "Secret Manager에 API 키 저장",
+      "Cloud Run 서비스 배포",
+      "헬스체크 및 모니터링 설정"
     ]
   },
   
   "file_structure": {
     "root": {
-      "crypto_signal_bot.py": "메인 실행 파일",
-      "config.py": "설정 파일",
-      "symbols.py": "심볼 관리",
-      "decision.py": "전략 로직",
-      "indicators.py": "기술 지표",
-      "requirements.txt": "의존성 목록",
-      ".env.example": "환경 변수 예시",
-      ".gitignore": "Git 제외 설정",
-      "render.yaml": "Render 배포 설정",
-      "runtime.txt": "Python 버전",
-      "build.sh": "빌드 스크립트",
-      "README.md": "사용 가이드",
-      "DEPLOYMENT_GUIDE.md": "배포 가이드",
-      "project_status.json": "프로젝트 현황 (현재 파일)"
+      "core_files": {
+        "crypto_signal_bot.py": "메인 실행 파일",
+        "config.py": "설정 파일",
+        "symbols.py": "심볼 관리 (프록시 지원 추가됨)",
+        "decision.py": "전략 로직",
+        "indicators.py": "기술 지표"
+      },
+      "configuration": {
+        "requirements.txt": "의존성 목록 (Flask 추가, 프록시 의존성 제거)",
+        ".env.example": "환경 변수 예시 (프록시 설정 제거)",
+        ".gitignore": "Git 제외 설정",
+        "runtime.txt": "Python 버전"
+      },
+      "deployment": {
+        "render.yaml": "Render 배포 설정",
+        "railway.toml": "Railway 배포 설정 (신규)",
+        "fly.toml": "Fly.io 배포 설정 (신규)",
+        "build.sh": "빌드 스크립트"
+      },
+      "documentation": {
+        "README.md": "사용 가이드",
+        "DEPLOYMENT_GUIDE.md": "배포 가이드",
+        "GOOGLE_CLOUD_DEPLOYMENT.md": "Google Cloud Run 상세 배포 가이드 (신규)",
+        "DEPLOYMENT_OPTIONS.md": "대체 배포 옵션 가이드",
+        "project_status.json": "프로젝트 현황 (현재 파일)"
+      },
+      "utilities": {
+        "cloud_run_wrapper.py": "Cloud Run HTTP 서버 래퍼 (신규)",
+        "run_local.sh": "로컬 실행 스크립트"
+      },
+      "docker": {
+        "Dockerfile": "Cloud Run용 Docker 설정",
+        ".dockerignore": "Docker 빌드 제외 파일"
+      }
+    },
+    "virtual_environment": {
+      "venv/": "Python 가상환경 (로컬 실행용)"
     }
+  },
+  
+  "lessons_learned": {
+    "deployment": [
+      "클라우드 플랫폼의 IP 대역이 거래소에 차단될 수 있음",
+      "SOCKS 프록시가 모든 플랫폼에서 지원되지 않음",
+      "로컬 테스트 후 배포가 필수적"
+    ],
+    "api_management": [
+      "읽기 전용 API도 IP 제한이 중요함",
+      "프록시 사용 시 선택적 적용이 필요함",
+      "에러 처리와 재시도 로직이 안정성의 핵심"
+    ],
+    "development": [
+      "환경별 설정 파일 분리가 중요",
+      "상세한 로깅이 디버깅에 필수적",
+      "가상환경 사용이 의존성 관리에 도움"
+    ]
   }
 }

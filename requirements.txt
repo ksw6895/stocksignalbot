@@ -4,4 +4,4 @@ python-dotenv
 python-telegram-bot
 schedule
 requests
-requests[socks] 
+flask 

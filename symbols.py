@@ -11,18 +11,6 @@ from requests.exceptions import ConnectTimeout, ReadTimeout, RequestException
 ###############################################################################
 # HELPER: EXPONENTIAL RETRY WRAPPER
 ###############################################################################
-def get_proxy_config():
-    """
-    Get proxy configuration from environment variables.
-    Supports SOCKS5 proxy for NordVPN or other proxy services.
-    """
-    proxy_url = os.getenv('PROXY_URL')
-    if proxy_url:
-        return {
-            'http': proxy_url,
-            'https': proxy_url
-        }
-    return None
 
 def retry_request(
     url: str,
@@ -30,22 +18,23 @@ def retry_request(
     params: Optional[dict] = None,
     headers: Optional[dict] = None,
     timeout: int = 20,
-    max_retries: int = 5,
-    use_proxy: bool = False
+    max_retries: int = 5
 ):
     attempt = 0
-    # Only use proxy for Binance API requests
-    proxies = get_proxy_config() if use_proxy else None
     
     while attempt < max_retries:
         try:
             if method.upper() == "GET":
-                resp = requests.get(url, params=params, headers=headers, timeout=timeout, proxies=proxies)
+                resp = requests.get(url, params=params, headers=headers, timeout=timeout)
             else:
-                resp = requests.post(url, data=params, headers=headers, timeout=timeout, proxies=proxies)
+                resp = requests.post(url, data=params, headers=headers, timeout=timeout)
             resp.raise_for_status()
             return resp
-        except (ConnectTimeout, ReadTimeout, RequestException) as e:
+        except (ConnectTimeout, ReadTimeout) as e:
+            logging.error(f"Request error on attempt {attempt+1} for {url}: {e}")
+            time.sleep(2 ** attempt)
+            attempt += 1
+        except RequestException as e:
             logging.error(f"Request error on attempt {attempt+1} for {url}: {e}")
             time.sleep(2 ** attempt)
             attempt += 1
@@ -74,7 +63,7 @@ def fetch_coinmarketcap_coins_multi_pages(
         }
         headers = {
             "Accepts": "application/json",
-            "X-CMC_PRO_API_KEY": CMC_API_KEY
+            "X-CMC_PRO_API_KEY": CMC_API_KEY.strip()
         }
 
         resp = retry_request(url, method="GET", params=params, headers=headers, timeout=30)
@@ -122,7 +111,7 @@ def save_filtered_symbols_to_file(symbols: List[str], filename: str = "filtered_
 ###############################################################################
 def get_valid_binance_symbols() -> set:
     endpoint = f"{BASE_URL}/api/v3/exchangeInfo"
-    resp = retry_request(endpoint, method="GET", params={}, timeout=20, max_retries=5, use_proxy=True)
+    resp = retry_request(endpoint, method="GET", params={}, timeout=20, max_retries=5)
     if resp is None:
         logging.error("Failed to fetch Binance exchange info.")
         return set()
@@ -198,7 +187,7 @@ def fetch_candles(symbol: str, interval: str, limit=100, start_time: Optional[in
     if start_time is not None:
         params["startTime"] = int(start_time)
         
-    resp = retry_request(endpoint, method="GET", params=params, timeout=20, max_retries=5, use_proxy=True)
+    resp = retry_request(endpoint, method="GET", params=params, timeout=20, max_retries=5)
     if resp is None:
         logging.error(f"Failed to fetch {interval} klines for {symbol} after retries, sir.")
         return pd.DataFrame()

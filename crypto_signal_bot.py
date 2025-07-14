@@ -33,6 +33,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Log startup configuration
+logger.info("Starting Crypto Signal Bot...")
+
 class CryptoSignalBot:
     def __init__(self):
         """Initialize the crypto signal bot"""
@@ -44,6 +47,11 @@ class CryptoSignalBot:
             raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env file")
         
         self.bot = Bot(token=self.telegram_token)
+        
+        # Log deployment environment
+        logger.info(f"Bot initialized on platform: {os.environ.get('RENDER', 'local')}")
+        logger.info(f"Python version: {os.sys.version}")
+        logger.info(f"Working directory: {os.getcwd()}")
         
         # Trading parameters
         self.interval = "1w"  # Weekly candles as requested

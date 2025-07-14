@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Test files
+test_*
+*_test.py
+
+# Documentation
+*.md
+LICENSE
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other deployment configs
+render.yaml
+railway.toml
+fly.toml
+build.sh
+run_local.sh
+
+# Temporary files
+*.tmp
+.DS_Store
