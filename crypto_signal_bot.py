@@ -102,13 +102,9 @@ class CryptoSignalBot:
         """Get symbols filtered by market cap in real-time with retry logic"""
         logger.info("Fetching real-time market cap data...")
         
+        # Always try to get fresh data from CoinMarketCap
         for attempt in range(self.max_retries):
             try:
-                # Check if we're banned
-                if self.api_ban_until and datetime.now() < self.api_ban_until:
-                    logger.warning("API is still banned, using fallback symbols")
-                    return ANALYSIS_SYMBOLS
-                
                 # Fetch coins from CoinMarketCap
                 coins = fetch_coinmarketcap_coins_multi_pages(
                     min_cap=self.min_market_cap,
@@ -118,7 +114,7 @@ class CryptoSignalBot:
                 
                 if not coins:
                     logger.warning("No coins found with specified market cap criteria")
-                    return []
+                    continue
                 
                 # Convert to Binance symbols
                 symbols = []
@@ -128,26 +124,38 @@ class CryptoSignalBot:
                         binance_symbol = cmc_symbol.upper() + "USDT"
                         symbols.append(binance_symbol)
                 
-                # Filter by valid Binance trading pairs
-                valid_binance = get_valid_binance_symbols()
-                filtered_symbols = [sym for sym in symbols if sym in valid_binance]
-                
-                logger.info(f"Found {len(filtered_symbols)} symbols after filtering")
-                self.reset_error_counter()
-                return filtered_symbols
-                
+                # Try to get valid Binance trading pairs
+                try:
+                    valid_binance = get_valid_binance_symbols()
+                    if valid_binance:  # Only filter if we got valid symbols
+                        filtered_symbols = [sym for sym in symbols if sym in valid_binance]
+                        logger.info(f"Found {len(filtered_symbols)} symbols after Binance filtering")
+                        self.reset_error_counter()
+                        return filtered_symbols
+                    else:
+                        # If Binance API is blocked, use all CMC symbols
+                        logger.warning("Cannot verify Binance pairs, using all CMC symbols")
+                        return symbols[:100]  # Limit to top 100 to avoid too many requests
+                except Exception as binance_error:
+                    logger.warning(f"Binance API error: {binance_error}, using CMC symbols only")
+                    return symbols[:100]  # Use top 100 CMC symbols
+                    
             except Exception as e:
                 wait_time = self.handle_api_error(str(e))
                 
                 if attempt < self.max_retries - 1:
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Max retries reached. Error: {e}")
-                    # Fallback to config file symbols
-                    logger.info("Falling back to pre-configured symbols")
-                    return ANALYSIS_SYMBOLS
+                    logger.error(f"CMC API failed after {self.max_retries} attempts: {e}")
         
-        return ANALYSIS_SYMBOLS
+        # If everything fails, use a hardcoded list of major coins
+        logger.warning("All APIs failed, using hardcoded major coins")
+        return [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
+            "LINKUSDT", "UNIUSDT", "ATOMUSDT", "LTCUSDT", "ETCUSDT",
+            "XLMUSDT", "NEARUSDT", "ALGOUSDT", "FILUSDT", "VETUSDT"
+        ]
     
     async def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
         """Send message to Telegram"""

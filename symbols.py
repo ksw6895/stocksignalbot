@@ -106,7 +106,7 @@ def get_valid_binance_symbols() -> set:
     endpoint = f"{BASE_URL}/api/v3/exchangeInfo"
     resp = retry_request(endpoint, method="GET", params={}, timeout=20, max_retries=5)
     if resp is None:
-        logging.error("Failed to fetch Binance exchange info, sir.")
+        logging.error("Failed to fetch Binance exchange info.")
         return set()
     try:
         data = resp.json()
@@ -115,6 +115,7 @@ def get_valid_binance_symbols() -> set:
         for s in symbols_data:
             if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING":
                 valid_symbols.add(s.get("symbol"))
+        logging.info(f"Found {len(valid_symbols)} valid USDT trading pairs on Binance")
         return valid_symbols
     except Exception as e:
         logging.error(f"Error parsing exchange info: {e}")

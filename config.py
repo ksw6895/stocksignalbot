@@ -20,7 +20,8 @@ def load_filtered_symbols_from_file(filename: str = "filtered_coins.txt") -> Lis
         symbols = [line.strip() for line in lines if line.strip()]
         return symbols
     except Exception as e:
-        logging.error(f"Error loading symbols from {filename}: {e}")
+        logging.info(f"No pre-configured symbols file found: {e}")
+        # Return empty list - will trigger real-time filtering
         return []
     
 ANALYSIS_SYMBOLS: List[str] = load_filtered_symbols_from_file()
