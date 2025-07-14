@@ -30,10 +30,12 @@ def retry_request(
     params: Optional[dict] = None,
     headers: Optional[dict] = None,
     timeout: int = 20,
-    max_retries: int = 5
+    max_retries: int = 5,
+    use_proxy: bool = False
 ):
     attempt = 0
-    proxies = get_proxy_config()
+    # Only use proxy for Binance API requests
+    proxies = get_proxy_config() if use_proxy else None
     
     while attempt < max_retries:
         try:
@@ -120,7 +122,7 @@ def save_filtered_symbols_to_file(symbols: List[str], filename: str = "filtered_
 ###############################################################################
 def get_valid_binance_symbols() -> set:
     endpoint = f"{BASE_URL}/api/v3/exchangeInfo"
-    resp = retry_request(endpoint, method="GET", params={}, timeout=20, max_retries=5)
+    resp = retry_request(endpoint, method="GET", params={}, timeout=20, max_retries=5, use_proxy=True)
     if resp is None:
         logging.error("Failed to fetch Binance exchange info.")
         return set()
@@ -196,7 +198,7 @@ def fetch_candles(symbol: str, interval: str, limit=100, start_time: Optional[in
     if start_time is not None:
         params["startTime"] = int(start_time)
         
-    resp = retry_request(endpoint, method="GET", params=params, timeout=20, max_retries=5)
+    resp = retry_request(endpoint, method="GET", params=params, timeout=20, max_retries=5, use_proxy=True)
     if resp is None:
         logging.error(f"Failed to fetch {interval} klines for {symbol} after retries, sir.")
         return pd.DataFrame()
