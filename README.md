@@ -126,7 +126,12 @@ python KwontBot.py
 ### Binance API
 1. [Binance](https://www.binance.com)에 로그인
 2. 계정 설정 → API 관리
-3. 새 API 키 생성 (읽기 권한만 필요)
+3. 새 API 키 생성
+4. Edit restrictions 클릭:
+   - ✅ Enable Reading (읽기만 체크)
+   - ❌ 다른 모든 권한은 해제
+   - IP access restrictions: **"Unrestricted"** 선택
+5. Save 클릭
 
 ### CoinMarketCap API
 1. [CoinMarketCap](https://coinmarketcap.com/api/) 개발자 포털 방문

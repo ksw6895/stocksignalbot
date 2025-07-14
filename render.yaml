@@ -1,9 +1,11 @@
 services:
   - type: worker
     name: crypto-signal-bot
+    runtime: python
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: chmod +x build.sh && ./build.sh
     startCommand: python crypto_signal_bot.py
+    autoDeploy: false
     envVars:
       - key: BINANCE_API_KEY
         sync: false
