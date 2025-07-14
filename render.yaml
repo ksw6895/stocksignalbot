@@ -1,0 +1,27 @@
+services:
+  - type: worker
+    name: crypto-signal-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python crypto_signal_bot.py
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: COINMARKETCAP_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TP_RATIO
+        value: "0.1"
+      - key: SL_RATIO
+        value: "0.05"
+      - key: MIN_MARKET_CAP
+        value: "150000000"
+      - key: MAX_MARKET_CAP
+        value: "20000000000"
+      - key: CMC_MAX_PAGES
+        value: "5"
