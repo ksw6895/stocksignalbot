@@ -351,16 +351,15 @@ flowchart LR
     subgraph "거래 제안 생명주기"
         CREATE[TradeProposal 생성]
         LAZY[지연 실행 대기]
-        REALIZE[realize() 호출]
-        
-        subgraph "실행 시뮬레이션"
-            ENTRY[진입 처리]
-            DCA[DCA 확인]
-            MONITOR[가격 모니터링]
-            EXIT[청산 처리]
-        end
-        
+        REALIZE[realize 호출]
         RESULT[실행 결과 반환]
+    end
+    
+    subgraph "실행 시뮬레이션"
+        ENTRY[진입 처리]
+        DCA[DCA 확인]
+        MONITOR[가격 모니터링]
+        EXIT[청산 처리]
     end
     
     CREATE --> LAZY
