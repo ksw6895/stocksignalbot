@@ -24,7 +24,7 @@ class FMPAPIClient:
         })
         
         # Exponential backoff settings
-        self.max_retries = 5
+        self.max_retries = 6  # 1s, 2s, 4s, 8s, 16s, 32s
         self.base_delay = 1.0  # Start with 1 second
         
     def _make_request(self, endpoint: str, params: Optional[Dict] = None, cache_duration: int = 300) -> Any:

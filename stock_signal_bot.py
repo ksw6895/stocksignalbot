@@ -53,10 +53,12 @@ class StockSignalBot:
         self.max_market_cap = 50_000_000_000
         self.is_scanning = False
         
+        # Initialize last_update_id before starting thread
+        self.last_update_id = None
+        
         # Start command handler thread
         self.command_thread = threading.Thread(target=self.poll_commands, daemon=True)
         self.command_thread.start()
-        self.last_update_id = None
     
     def _signal_handler(self, signum, frame):
         logger.info(f"Received signal {signum}. Shutting down gracefully...")
@@ -367,7 +369,7 @@ class StockSignalBot:
                 try:
                     symbol = stock['symbol']
                     
-                    weekly_data = self.data_fetcher.get_historical_weekly(symbol)
+                    weekly_data = self.data_fetcher.fetch_weekly_candles(symbol)
                     if not weekly_data:
                         return None
                     
@@ -406,9 +408,14 @@ class StockSignalBot:
             
             logger.info(f"Total API requests made: {self.data_fetcher.fmp_client.request_count}")
             
+            # Send scan completion summary
+            self.send_scan_summary(stocks, signals, new_signals)
+            
         except Exception as e:
             logger.error(f"Error during scan: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
+            # Send error summary
+            self.send_error_summary(str(e))
         finally:
             self.is_scanning = False
     
@@ -462,6 +469,95 @@ class StockSignalBot:
             
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
+    
+    def send_scan_summary(self, stocks: List[Dict], all_signals: List[Dict], new_signals: List[Dict]):
+        """Send comprehensive scan completion summary"""
+        try:
+            scan_end_time = datetime.now()
+            scan_duration = (scan_end_time - self.last_scan_time).total_seconds() if self.last_scan_time else 0
+            
+            # Build summary message
+            message = "📊 *스캔 완료 보고서*\n"
+            message += "=" * 30 + "\n\n"
+            
+            # Scan statistics
+            message += "📈 *스캔 통계*\n"
+            message += f"• 분석한 주식: {len(stocks)}개\n"
+            message += f"• 패턴 감지: {len(all_signals)}개\n"
+            message += f"• 새로운 신호: {len(new_signals)}개\n"
+            message += f"• 소요 시간: {scan_duration:.1f}초\n\n"
+            
+            # API usage
+            api_requests = self.data_fetcher.fmp_client.request_count
+            remaining_requests = self.data_fetcher.fmp_client.get_remaining_requests()
+            daily_limit = self.data_fetcher.fmp_client.daily_limit
+            
+            message += "🔌 *API 사용량*\n"
+            message += f"• 사용: {api_requests}회\n"
+            message += f"• 남은 요청: {remaining_requests}/{daily_limit}회\n"
+            usage_percent = ((daily_limit - remaining_requests) / daily_limit) * 100
+            message += f"• 일일 사용률: {usage_percent:.1f}%\n\n"
+            
+            # Signal summary
+            if new_signals:
+                message += "🎯 *발견된 신호*\n"
+                for signal in new_signals[:10]:  # Limit to 10 signals
+                    symbol = signal.get('symbol', 'N/A')
+                    pattern = signal.get('pattern', 'N/A')
+                    ema_period = signal.get('ema_period', 'N/A')
+                    entry = signal.get('entry', 0)
+                    tp = signal.get('take_profit', 0)
+                    message += f"• {symbol}: {pattern} (EMA{ema_period})\n"
+                    message += f"  진입: ${entry:.2f} | TP: ${tp:.2f}\n"
+                
+                if len(new_signals) > 10:
+                    message += f"\n... 외 {len(new_signals) - 10}개 신호\n"
+            else:
+                message += "ℹ️ *신호 없음*\n"
+                message += "이번 스캔에서 새로운 매수 신호를 발견하지 못했습니다.\n\n"
+            
+            # Market status and next scan
+            market_hours = self.data_fetcher.get_market_hours()
+            is_market_open = market_hours.get('isTheMarketOpen', False)
+            
+            message += "⏰ *다음 스캔 예정*\n"
+            next_scan = scan_end_time + timedelta(seconds=self.scan_interval)
+            message += f"• 다음 스캔: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            message += f"• 주기: {self.scan_interval/3600:.1f}시간\n"
+            message += f"• 시장 상태: {'🟢 개장' if is_market_open else '🔴 마감'}\n\n"
+            
+            # Performance summary
+            if self.total_scans > 0:
+                avg_signals_per_scan = self.total_signals / self.total_scans
+                message += "📈 *누적 성과*\n"
+                message += f"• 총 스캔: {self.total_scans}회\n"
+                message += f"• 총 신호: {self.total_signals}개\n"
+                message += f"• 평균 신호/스캔: {avg_signals_per_scan:.2f}개\n"
+            
+            message += "\n" + "=" * 30
+            message += "\n_Upper Section Strategy Bot v1.0_"
+            
+            self.send_telegram_message(message)
+            logger.info("Scan summary sent successfully")
+            
+        except Exception as e:
+            logger.error(f"Error sending scan summary: {e}")
+    
+    def send_error_summary(self, error_msg: str):
+        """Send error summary when scan fails"""
+        try:
+            message = "⚠️ *스캔 오류 발생*\n\n"
+            message += f"오류: {error_msg[:200]}\n\n"
+            message += "봇이 계속 실행 중이며 다음 스캔을 시도합니다.\n"
+            
+            if self.last_scan_time:
+                next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
+                message += f"\n⏰ 다음 스캔: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            self.send_telegram_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error sending error summary: {e}")
     
     def run(self):
         logger.info("=" * 50)

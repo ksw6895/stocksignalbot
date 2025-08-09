@@ -202,12 +202,10 @@ class StockDataFetcher:
                 except Exception as e:
                     logger.error(f"Error processing {stock.get('symbol', 'unknown')}: {e}")
             
+            # Log remaining requests for monitoring
             remaining_requests = self.fmp_client.get_remaining_requests()
-            if remaining_requests < 10:
-                logger.warning(f"Low API quota: {remaining_requests} requests remaining")
-                if i + batch_size < total:
-                    logger.info("Pausing to preserve API quota...")
-                    time.sleep(60)
+            if remaining_requests < 50:
+                logger.info(f"API quota status: {remaining_requests} requests remaining")
         
         return results
     
