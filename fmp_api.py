@@ -2,6 +2,7 @@ import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import logging
+import time
 from collections import deque
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,6 @@ class FMPAPIClient:
         self.api_key = api_key
         self.daily_limit = daily_limit
         self.request_count = 0
-        self.request_timestamps = deque(maxlen=daily_limit)
         self.cache = {}
         self.cache_expiry = {}
         self.session = requests.Session()
@@ -22,21 +22,9 @@ class FMPAPIClient:
             'User-Agent': 'StockSignalBot/1.0'
         })
         
-    def _check_rate_limit(self):
-        now = datetime.now()
-        day_ago = now - timedelta(days=1)
-        
-        self.request_timestamps = deque(
-            (ts for ts in self.request_timestamps if ts > day_ago),
-            maxlen=self.daily_limit
-        )
-        
-        if len(self.request_timestamps) >= self.daily_limit:
-            oldest = self.request_timestamps[0]
-            wait_time = (oldest + timedelta(days=1) - now).total_seconds()
-            if wait_time > 0:
-                logger.warning(f"Daily rate limit reached. Waiting {wait_time:.0f} seconds...")
-                raise Exception(f"FMP API daily limit reached. Wait {wait_time:.0f} seconds.")
+        # Exponential backoff settings
+        self.max_retries = 5
+        self.base_delay = 1.0  # Start with 1 second
         
     def _make_request(self, endpoint: str, params: Optional[Dict] = None, cache_duration: int = 300) -> Any:
         cache_key = f"{endpoint}:{str(params)}"
@@ -47,31 +35,54 @@ class FMPAPIClient:
                 logger.debug(f"Cache hit for {endpoint}")
                 return self.cache[cache_key]
         
-        self._check_rate_limit()
-        
         if params is None:
             params = {}
         params['apikey'] = self.api_key
         
         url = f"{self.BASE_URL}{endpoint}"
         
-        try:
-            response = self.session.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            
-            self.request_timestamps.append(now)
-            self.request_count += 1
-            
-            data = response.json()
-            
-            self.cache[cache_key] = data
-            self.cache_expiry[cache_key] = now + timedelta(seconds=cache_duration)
-            
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"FMP API request failed: {e}")
-            raise
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(url, params=params, timeout=30)
+                self.request_count += 1
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    self.cache[cache_key] = data
+                    self.cache_expiry[cache_key] = now + timedelta(seconds=cache_duration)
+                    return data
+                elif response.status_code == 429:
+                    # Rate limit hit - exponential backoff
+                    delay = self.base_delay * (2 ** attempt)
+                    logger.warning(f"Rate limit hit (429), retrying in {delay} seconds (attempt {attempt + 1}/{self.max_retries})")
+                    time.sleep(delay)
+                    continue
+                elif response.status_code in [500, 502, 503, 504]:
+                    # Server error - exponential backoff
+                    delay = self.base_delay * (2 ** attempt)
+                    logger.warning(f"Server error {response.status_code}, retrying in {delay} seconds")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"API request failed: {response.status_code} - {response.text}")
+                    raise requests.exceptions.RequestException(f"Status {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                delay = self.base_delay * (2 ** attempt)
+                logger.warning(f"Request timeout, retrying in {delay} seconds")
+                time.sleep(delay)
+                continue
+            except requests.exceptions.RequestException as e:
+                if attempt < self.max_retries - 1:
+                    delay = self.base_delay * (2 ** attempt)
+                    logger.warning(f"Request error: {e}, retrying in {delay} seconds")
+                    time.sleep(delay)
+                    continue
+                logger.error(f"FMP API request failed after {self.max_retries} attempts: {e}")
+                raise
+        
+        logger.error(f"Max retries ({self.max_retries}) reached for {endpoint}")
+        raise Exception(f"Failed to complete request after {self.max_retries} attempts")
     
     def get_nasdaq_stocks(self, min_market_cap: int = 500_000_000, 
                          max_market_cap: int = 50_000_000_000) -> List[Dict]:

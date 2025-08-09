@@ -12,11 +12,10 @@ import traceback
 
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-    SCAN_INTERVAL, SCAN_DURING_MARKET_HOURS_ONLY,
     validate_config, format_number
 )
 from stocks import StockDataFetcher
-from decision import StockKwonStrategy
+from decision import UpperSectionStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,7 +31,7 @@ class StockSignalBot:
         self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         self.chat_id = TELEGRAM_CHAT_ID
         self.data_fetcher = StockDataFetcher()
-        self.strategy = StockKwonStrategy()
+        self.strategy = UpperSectionStrategy()
         
         self.signals_sent = set()
         self.signals_file = "signals_sent.json"
@@ -46,6 +45,9 @@ class StockSignalBot:
         self.is_running = True
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
+        
+        # Set scan interval to 4 hours (14400 seconds)
+        self.scan_interval = 14400  # 4 hours
     
     def _signal_handler(self, signum, frame):
         logger.info(f"Received signal {signum}. Shutting down gracefully...")
@@ -66,7 +68,7 @@ class StockSignalBot:
     
     def save_signals_history(self):
         try:
-            cutoff_date = datetime.now() - timedelta(days=7)
+            cutoff_date = datetime.now() - timedelta(days=30)  # Keep 30 days of history
             recent_signals = [
                 s for s in self.signals_sent 
                 if '_' in s and datetime.fromisoformat(s.split('_')[1]) > cutoff_date
@@ -93,7 +95,7 @@ class StockSignalBot:
     def format_signal_message(self, signal: Dict, stock_info: Optional[Dict] = None) -> str:
         symbol = signal['symbol']
         
-        message = f"🎯 *STOCK BUY SIGNAL*\n\n"
+        message = f"🎯 *UPPER SECTION SIGNAL*\n\n"
         message += f"*Symbol:* {symbol}\n"
         
         if stock_info:
@@ -102,20 +104,25 @@ class StockSignalBot:
             message += f"*Market Cap:* {format_number(stock_info.get('marketCap', 0))}\n"
         
         message += f"\n📊 *Signal Details:*\n"
+        message += f"• Pattern: {signal.get('pattern', 'N/A').upper()}\n"
+        message += f"• Decision: {signal.get('decision', 'N/A')}\n"
         message += f"• Current Price: ${signal['current_price']}\n"
-        message += f"• Entry Price: ${signal['entry_price']}\n"
-        message += f"• Take Profit: ${signal['tp_price']} (+{signal['tp_price']/signal['entry_price']*100-100:.1f}%)\n"
-        message += f"• Stop Loss: ${signal['sl_price']} (-{100-signal['sl_price']/signal['entry_price']*100:.1f}%)\n"
+        message += f"• Entry Price (EMA{signal['ema_period']}): ${signal['entry_price']}\n"
+        message += f"• Take Profit: ${signal['tp_price']} (+10%)\n"
+        message += f"• Stop Loss: ${signal['sl_price']} (-5%)\n"
         
         message += f"\n📈 *Technical Analysis:*\n"
-        message += f"• Peak Price: ${signal['peak_price']} ({signal['peak_weeks_ago']} weeks ago)\n"
-        message += f"• Pullback: {signal['price_from_peak']}%\n"
-        message += f"• EMA{signal['ema_type']}: ${signal[f'ema_{\"short\" if signal[\"ema_type\"] == 20 else \"long\"}']}\n"
-        message += f"• Volume Ratio: {signal['volume_ratio']}x avg\n"
-        message += f"• Signal Strength: {signal['signal_strength']}\n"
+        message += f"• Peak High: ${signal.get('peak_high', 0)}\n"
+        message += f"• Pullback from Peak: {signal.get('price_from_peak', 0)}%\n"
+        message += f"• Current Low: ${signal.get('current_low', 0)}\n"
+        message += f"• Current High: ${signal.get('current_high', 0)}\n"
         message += f"• Risk/Reward: {signal['risk_reward']}:1\n"
         
-        message += f"\n⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} EST"
+        if signal.get('volume', 0) > 0:
+            message += f"• Volume: {format_number(signal['volume'])}\n"
+        
+        message += f"\n⏰ *Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        message += f"\n📅 *Timeframe:* Weekly (1W)"
         
         return message
     
@@ -124,12 +131,8 @@ class StockSignalBot:
             return
         
         try:
-            if SCAN_DURING_MARKET_HOURS_ONLY and not self.data_fetcher.is_market_open():
-                logger.info("Market is closed, skipping scan")
-                return
-            
             logger.info("=" * 50)
-            logger.info("Starting stock market scan...")
+            logger.info("Starting Upper Section Strategy scan (Weekly)...")
             self.total_scans += 1
             
             stocks = self.data_fetcher.get_filtered_stocks()
@@ -138,18 +141,21 @@ class StockSignalBot:
                 logger.warning("No stocks found matching criteria")
                 return
             
-            logger.info(f"Analyzing {len(stocks)} NASDAQ stocks...")
+            logger.info(f"Analyzing {len(stocks)} NASDAQ stocks with weekly data...")
             
             signals_found = []
             
             def process_stock(stock):
                 symbol = stock['symbol']
                 
+                # Fetch weekly candles (52 weeks = 1 year)
                 candles = self.data_fetcher.fetch_weekly_candles(symbol, 52)
-                if not candles:
+                if not candles or len(candles) < 35:
+                    logger.debug(f"{symbol}: Insufficient weekly data")
                     return None
                 
-                signal = self.strategy.analyze(candles, symbol)
+                # Analyze with Upper Section Strategy using weekly interval
+                signal = self.strategy.analyze(candles, symbol, interval="1w")
                 
                 if signal and self.strategy.validate_signal(signal):
                     signal_key = f"{symbol}_{datetime.now().date().isoformat()}"
@@ -161,6 +167,7 @@ class StockSignalBot:
                 
                 return None
             
+            # Process stocks in batches to manage memory
             results = self.data_fetcher.process_stocks_in_batches(
                 stocks, process_stock, batch_size=20
             )
@@ -178,8 +185,7 @@ class StockSignalBot:
             
             self.last_scan_time = datetime.now()
             
-            remaining = self.data_fetcher.fmp_client.get_remaining_requests()
-            logger.info(f"API requests remaining today: {remaining}")
+            logger.info(f"Total API requests made: {self.data_fetcher.fmp_client.request_count}")
             
         except Exception as e:
             logger.error(f"Error during scan: {e}")
@@ -201,68 +207,74 @@ class StockSignalBot:
             self.signals_sent.add(signal_key)
             self.total_signals += 1
             
-            logger.info(f"Signal sent for {symbol}")
+            logger.info(f"Signal sent for {symbol} - Pattern: {signal.get('pattern')} - EMA{signal.get('ema_period')}")
             
-            if len(self.signals_sent) % 10 == 0:
+            # Save history after every 5 signals
+            if len(self.signals_sent) % 5 == 0:
                 self.save_signals_history()
             
         except Exception as e:
             logger.error(f"Error processing signal for {signal.get('symbol', 'unknown')}: {e}")
     
-    def send_daily_summary(self):
+    def send_status_update(self):
         try:
             uptime = datetime.now() - self.start_time
             hours = uptime.total_seconds() / 3600
+            days = hours / 24
             
-            message = "📊 *Daily Stock Bot Summary*\n\n"
-            message += f"• Uptime: {hours:.1f} hours\n"
+            message = "📊 *Upper Section Strategy Status*\n\n"
+            message += f"• Uptime: {days:.1f} days ({hours:.1f} hours)\n"
             message += f"• Total Scans: {self.total_scans}\n"
-            message += f"• Signals Sent: {self.total_signals}\n"
+            message += f"• Signals Found: {self.total_signals}\n"
             message += f"• Stocks Monitored: ~{len(self.data_fetcher.cached_stocks)}\n"
-            
-            remaining = self.data_fetcher.fmp_client.get_remaining_requests()
-            message += f"• API Requests Remaining: {remaining}\n"
+            message += f"• API Requests: {self.data_fetcher.fmp_client.request_count}\n"
             
             market_hours = self.data_fetcher.get_market_hours()
             message += f"\n🏛️ *Market Status:*\n"
             message += f"• {'OPEN' if market_hours.get('isTheMarketOpen') else 'CLOSED'}\n"
-            message += f"• Hours: {market_hours.get('marketOpen', 'N/A')} - {market_hours.get('marketClose', 'N/A')} EST\n"
             
             if self.last_scan_time:
-                message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%H:%M:%S')}"
+                next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
+                message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
             
             import asyncio
             asyncio.run(self.send_telegram_message(message))
             
         except Exception as e:
-            logger.error(f"Error sending daily summary: {e}")
+            logger.error(f"Error sending status update: {e}")
     
     def run(self):
         logger.info("=" * 50)
-        logger.info("Stock Signal Bot Started")
+        logger.info("Upper Section Strategy Bot Started")
         logger.info("=" * 50)
         
-        startup_message = "🚀 *Stock Signal Bot Started*\n\n"
-        startup_message += "Monitoring NASDAQ stocks for buy signals using Kwon Strategy.\n"
-        startup_message += f"Scan interval: Every {SCAN_INTERVAL//60} minutes"
-        if SCAN_DURING_MARKET_HOURS_ONLY:
-            startup_message += " (market hours only)"
+        startup_message = "🚀 *Upper Section Strategy Bot Started*\n\n"
+        startup_message += "Monitoring NASDAQ stocks for Upper Section patterns using weekly data.\n"
+        startup_message += f"• Strategy: Single Peak + Bearish Pattern + EMA Entry\n"
+        startup_message += f"• Timeframe: Weekly (1W)\n"
+        startup_message += f"• Scan Interval: Every 4 hours\n"
+        startup_message += f"• TP/SL: +10% / -5%\n"
         
         import asyncio
         asyncio.run(self.send_telegram_message(startup_message))
         
+        # Run initial scan
         self.scan_for_signals()
         
-        schedule.every(SCAN_INTERVAL).seconds.do(self.scan_for_signals)
+        # Schedule scans every 4 hours
+        schedule.every(self.scan_interval).seconds.do(self.scan_for_signals)
         
-        schedule.every().day.at("16:30").do(self.send_daily_summary)
+        # Send status update twice daily (at 9 AM and 9 PM UTC)
+        schedule.every().day.at("09:00").do(self.send_status_update)
+        schedule.every().day.at("21:00").do(self.send_status_update)
         
-        logger.info(f"Scheduled scans every {SCAN_INTERVAL} seconds")
+        logger.info(f"Scheduled scans every 4 hours ({self.scan_interval} seconds)")
         
         while self.is_running:
             try:
                 schedule.run_pending()
-                time.sleep(1)
+                time.sleep(60)  # Check every minute
             except KeyboardInterrupt:
                 logger.info("Received keyboard interrupt")
                 break
@@ -271,7 +283,7 @@ class StockSignalBot:
                 time.sleep(60)
         
         self.save_signals_history()
-        logger.info("Stock Signal Bot stopped")
+        logger.info("Upper Section Strategy Bot stopped")
 
 
 if __name__ == "__main__":
