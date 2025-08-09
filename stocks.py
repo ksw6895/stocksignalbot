@@ -18,8 +18,10 @@ class StockDataFetcher:
         self.last_scan_time = None
         self.cached_stocks = []
         self.cache_duration = timedelta(hours=1)
+        self.min_market_cap = MIN_MARKET_CAP
+        self.max_market_cap = MAX_MARKET_CAP
     
-    def get_filtered_stocks(self, force_refresh: bool = False) -> List[Dict]:
+    def get_filtered_stocks(self, force_refresh: bool = False, min_market_cap: Optional[int] = None, max_market_cap: Optional[int] = None) -> List[Dict]:
         now = datetime.now()
         
         if not force_refresh and self.cached_stocks and self.last_scan_time:
@@ -27,7 +29,9 @@ class StockDataFetcher:
                 logger.info(f"Using cached stock list ({len(self.cached_stocks)} stocks)")
                 return self.cached_stocks
         
-        logger.info(f"Fetching NASDAQ stocks (Market Cap: ${MIN_MARKET_CAP:,} - ${MAX_MARKET_CAP:,})")
+        min_cap = min_market_cap if min_market_cap is not None else self.min_market_cap
+        max_cap = max_market_cap if max_market_cap is not None else self.max_market_cap
+        logger.info(f"Fetching NASDAQ stocks (Market Cap: ${min_cap:,} - ${max_cap:,})")
         
         try:
             if WATCHLIST_SYMBOLS:
@@ -47,7 +51,7 @@ class StockDataFetcher:
                             })
                 logger.info(f"Loaded {len(stocks)} stocks from watchlist")
             else:
-                all_stocks = self.fmp_client.get_nasdaq_stocks(MIN_MARKET_CAP, MAX_MARKET_CAP)
+                all_stocks = self.fmp_client.get_nasdaq_stocks(min_cap, max_cap)
                 
                 stocks = []
                 for stock in all_stocks:
@@ -84,7 +88,7 @@ class StockDataFetcher:
         if volume < MIN_VOLUME:
             return False
         
-        if market_cap < MIN_MARKET_CAP or market_cap > MAX_MARKET_CAP:
+        if market_cap < self.min_market_cap or market_cap > self.max_market_cap:
             return False
         
         return True
@@ -159,6 +163,16 @@ class StockDataFetcher:
         except Exception as e:
             logger.error(f"Error fetching stock info for {symbol}: {e}")
             return None
+    
+    def get_nasdaq_stocks(self, min_market_cap: Optional[int] = None, max_market_cap: Optional[int] = None) -> List[Dict]:
+        """Get NASDAQ stocks within market cap range"""
+        min_cap = min_market_cap if min_market_cap is not None else self.min_market_cap
+        max_cap = max_market_cap if max_market_cap is not None else self.max_market_cap
+        return self.get_filtered_stocks(force_refresh=True, min_market_cap=min_cap, max_market_cap=max_cap)
+    
+    def get_company_profile(self, symbol: str) -> Optional[Dict]:
+        """Get company profile for a symbol"""
+        return self.fmp_client.get_company_profile(symbol)
     
     def is_market_open(self) -> bool:
         return self.fmp_client.is_market_open()
