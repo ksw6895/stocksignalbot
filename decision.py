@@ -307,6 +307,8 @@ class UpperSectionStrategy:
             'current_high': round(float(current_high), 2),
             'tp_price': round(float(tp_price), 2),
             'sl_price': round(float(sl_price), 2),
+            'tp_ratio': self.tp_ratio,
+            'sl_ratio': self.sl_ratio,
             'ema_period': ema_period,
             'risk_reward': round(risk_reward, 2),
             'volume': int(volume),

@@ -15,20 +15,10 @@ logger = logging.getLogger(__name__)
 class StockDataFetcher:
     def __init__(self):
         self.fmp_client = FMPAPIClient(FMP_API_KEY, daily_limit=FMP_DAILY_LIMIT)
-        self.last_scan_time = None
-        self.cached_stocks = []
-        self.cache_duration = timedelta(hours=1)
         self.min_market_cap = MIN_MARKET_CAP
         self.max_market_cap = MAX_MARKET_CAP
     
     def get_filtered_stocks(self, force_refresh: bool = False, min_market_cap: Optional[int] = None, max_market_cap: Optional[int] = None) -> List[Dict]:
-        now = datetime.now()
-        
-        if not force_refresh and self.cached_stocks and self.last_scan_time:
-            if now - self.last_scan_time < self.cache_duration:
-                logger.info(f"Using cached stock list ({len(self.cached_stocks)} stocks)")
-                return self.cached_stocks
-        
         min_cap = min_market_cap if min_market_cap is not None else self.min_market_cap
         max_cap = max_market_cap if max_market_cap is not None else self.max_market_cap
         logger.info(f"Fetching NASDAQ stocks (Market Cap: ${min_cap:,} - ${max_cap:,})")
@@ -68,14 +58,11 @@ class StockDataFetcher:
                 
                 logger.info(f"Found {len(stocks)} NASDAQ stocks matching criteria")
             
-            self.cached_stocks = stocks
-            self.last_scan_time = now
-            
             return stocks
             
         except Exception as e:
             logger.error(f"Error fetching stocks: {e}")
-            return self.cached_stocks if self.cached_stocks else []
+            return []
     
     def _validate_stock(self, stock: Dict) -> bool:
         price = stock.get('price', 0)
@@ -211,6 +198,4 @@ class StockDataFetcher:
     
     def clear_cache(self):
         self.fmp_client.clear_cache()
-        self.cached_stocks = []
-        self.last_scan_time = None
         logger.info("Stock data cache cleared")

@@ -219,7 +219,7 @@ class StockSignalBot:
         message += f"• Uptime: {days:.1f} days ({hours:.1f} hours)\n"
         message += f"• Total Scans: {self.total_scans}\n"
         message += f"• Signals Found: {self.total_signals}\n"
-        message += f"• Stocks Monitored: ~{len(self.data_fetcher.cached_stocks)}\n"
+        message += f"• Stocks Monitored: NASDAQ\n"
         message += f"• API Requests: {self.data_fetcher.fmp_client.request_count}\n"
         message += f"• Scan Interval: {self.scan_interval/3600:.1f} hours\n"
         message += f"• Market Cap Range: ${self.min_market_cap/1e6:.0f}M - ${self.max_market_cap/1e9:.0f}B\n"
@@ -453,7 +453,7 @@ class StockSignalBot:
             message += f"• Uptime: {days:.1f} days ({hours:.1f} hours)\n"
             message += f"• Total Scans: {self.total_scans}\n"
             message += f"• Signals Found: {self.total_signals}\n"
-            message += f"• Stocks Monitored: ~{len(self.data_fetcher.cached_stocks)}\n"
+            message += f"• Stocks Monitored: NASDAQ\n"
             message += f"• API Requests: {self.data_fetcher.fmp_client.request_count}\n"
             
             market_hours = self.data_fetcher.get_market_hours()
