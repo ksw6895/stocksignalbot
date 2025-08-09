@@ -2,9 +2,7 @@
 import logging
 import time
 import schedule
-import asyncio
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import json
@@ -31,13 +29,10 @@ class StockSignalBot:
     def __init__(self):
         validate_config()
         
+        self.bot_token = TELEGRAM_BOT_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
         self.data_fetcher = StockDataFetcher()
         self.strategy = UpperSectionStrategy()
-        
-        # Initialize Telegram application
-        self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-        self.bot = self.application.bot
         
         self.signals_sent = set()
         self.signals_file = "signals_sent.json"
@@ -58,44 +53,162 @@ class StockSignalBot:
         self.max_market_cap = 50_000_000_000
         self.is_scanning = False
         
-        # Setup command handlers
-        self.setup_handlers()
+        # Start command handler thread
+        self.command_thread = threading.Thread(target=self.poll_commands, daemon=True)
+        self.command_thread.start()
+        self.last_update_id = None
     
-    def setup_handlers(self):
-        """Setup Telegram command handlers"""
-        self.application.add_handler(CommandHandler("start", self.cmd_start))
-        self.application.add_handler(CommandHandler("help", self.cmd_help))
-        self.application.add_handler(CommandHandler("status", self.cmd_status))
-        self.application.add_handler(CommandHandler("scan", self.cmd_scan))
-        self.application.add_handler(CommandHandler("caprange", self.cmd_caprange))
-        self.application.add_handler(CommandHandler("interval", self.cmd_interval))
-        self.application.add_handler(CommandHandler("history", self.cmd_history))
-        self.application.add_handler(CommandHandler("clear", self.cmd_clear))
+    def _signal_handler(self, signum, frame):
+        logger.info(f"Received signal {signum}. Shutting down gracefully...")
+        self.is_running = False
+        self.save_signals_history()
+        sys.exit(0)
     
-    async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /start command"""
-        message = "🚀 *Upper Section Strategy Bot*\n\n"
-        message += "Welcome! This bot monitors NASDAQ stocks for Upper Section patterns.\n\n"
-        message += "Type /help to see available commands."
-        await update.message.reply_text(message, parse_mode='Markdown')
+    def load_signals_history(self):
+        try:
+            with open(self.signals_file, 'r') as f:
+                data = json.load(f)
+                self.signals_sent = set(data.get('signals', []))
+                logger.info(f"Loaded {len(self.signals_sent)} historical signals")
+        except FileNotFoundError:
+            logger.info("No signals history file found, starting fresh")
+        except Exception as e:
+            logger.error(f"Error loading signals history: {e}")
     
-    async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /help command"""
-        message = "📚 *Available Commands:*\n\n"
-        message += "/start - Start the bot\n"
-        message += "/help - Show this help message\n"
-        message += "/status - Show bot status and statistics\n"
-        message += "/scan - Trigger an immediate scan\n"
-        message += "/caprange [min] [max] - Set market cap range (in millions)\n"
-        message += "  Example: /caprange 500 50000\n"
-        message += "/interval [hours] - Set scan interval\n"
-        message += "  Example: /interval 2\n"
-        message += "/history - Show recent signals\n"
-        message += "/clear - Clear signal history\n"
-        await update.message.reply_text(message, parse_mode='Markdown')
+    def save_signals_history(self):
+        try:
+            cutoff_date = datetime.now() - timedelta(days=30)
+            recent_signals = [
+                s for s in self.signals_sent 
+                if '_' in s and datetime.fromisoformat(s.split('_')[1]) > cutoff_date
+            ]
+            
+            with open(self.signals_file, 'w') as f:
+                json.dump({'signals': list(recent_signals)}, f)
+            logger.info(f"Saved {len(recent_signals)} recent signals")
+        except Exception as e:
+            logger.error(f"Error saving signals history: {e}")
     
-    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /status command"""
+    def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            payload = {
+                'chat_id': self.chat_id,
+                'text': message,
+                'parse_mode': parse_mode,
+                'disable_web_page_preview': True
+            }
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                logger.info("Telegram message sent successfully")
+            else:
+                logger.error(f"Failed to send Telegram message: {response.text}")
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message: {e}")
+    
+    def get_updates(self, offset: Optional[int] = None):
+        """Get updates from Telegram"""
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
+            params = {'timeout': 30}
+            if offset:
+                params['offset'] = offset
+            
+            response = requests.get(url, params=params, timeout=35)
+            if response.status_code == 200:
+                return response.json().get('result', [])
+            return []
+        except Exception as e:
+            logger.error(f"Error getting updates: {e}")
+            return []
+    
+    def poll_commands(self):
+        """Poll for Telegram commands"""
+        logger.info("Starting Telegram command polling...")
+        
+        while self.is_running:
+            try:
+                updates = self.get_updates(self.last_update_id)
+                
+                for update in updates:
+                    update_id = update.get('update_id')
+                    if update_id:
+                        self.last_update_id = update_id + 1
+                    
+                    message = update.get('message', {})
+                    text = message.get('text', '')
+                    chat_id = message.get('chat', {}).get('id')
+                    
+                    if text.startswith('/'):
+                        self.handle_command(text, chat_id)
+                
+                time.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Error in command polling: {e}")
+                time.sleep(5)
+    
+    def handle_command(self, text: str, chat_id: int):
+        """Handle Telegram commands"""
+        try:
+            parts = text.split()
+            command = parts[0].lower()
+            args = parts[1:] if len(parts) > 1 else []
+            
+            # Only respond to commands from authorized chat
+            if str(chat_id) != str(self.chat_id):
+                return
+            
+            if command == '/start':
+                message = "🚀 *Upper Section Strategy Bot*\n\n"
+                message += "Welcome! This bot monitors NASDAQ stocks for Upper Section patterns.\n\n"
+                message += "Type /help to see available commands."
+                self.send_telegram_message(message)
+            
+            elif command == '/help':
+                message = "📚 *Available Commands:*\n\n"
+                message += "/start - Start the bot\n"
+                message += "/help - Show this help message\n"
+                message += "/status - Show bot status and statistics\n"
+                message += "/scan - Trigger an immediate scan\n"
+                message += "/caprange [min] [max] - Set market cap range (in millions)\n"
+                message += "  Example: /caprange 500 50000\n"
+                message += "/interval [hours] - Set scan interval\n"
+                message += "  Example: /interval 2\n"
+                message += "/history - Show recent signals\n"
+                message += "/clear - Clear signal history\n"
+                self.send_telegram_message(message)
+            
+            elif command == '/status':
+                self.send_status_message()
+            
+            elif command == '/scan':
+                if self.is_scanning:
+                    self.send_telegram_message("⚠️ A scan is already in progress. Please wait...")
+                else:
+                    self.send_telegram_message("🔍 Starting immediate scan...")
+                    thread = threading.Thread(target=self.scan_for_signals)
+                    thread.start()
+            
+            elif command == '/caprange':
+                self.handle_caprange(args)
+            
+            elif command == '/interval':
+                self.handle_interval(args)
+            
+            elif command == '/history':
+                self.show_history()
+            
+            elif command == '/clear':
+                self.signals_sent.clear()
+                self.save_signals_history()
+                self.send_telegram_message("✅ Signal history cleared.")
+            
+        except Exception as e:
+            logger.error(f"Error handling command: {e}")
+    
+    def send_status_message(self):
+        """Send status message"""
         uptime = datetime.now() - self.start_time
         hours = uptime.total_seconds() / 3600
         days = hours / 24
@@ -117,35 +230,23 @@ class StockSignalBot:
             message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
             message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
         
-        await update.message.reply_text(message, parse_mode='Markdown')
+        self.send_telegram_message(message)
     
-    async def cmd_scan(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /scan command - trigger immediate scan"""
-        if self.is_scanning:
-            await update.message.reply_text("⚠️ A scan is already in progress. Please wait...")
-            return
-        
-        await update.message.reply_text("🔍 Starting immediate scan...")
-        
-        # Run scan in background thread
-        thread = threading.Thread(target=self.scan_for_signals)
-        thread.start()
-    
-    async def cmd_caprange(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /caprange command - set market cap range"""
+    def handle_caprange(self, args):
+        """Handle caprange command"""
         try:
-            if len(context.args) != 2:
-                await update.message.reply_text(
+            if len(args) != 2:
+                self.send_telegram_message(
                     "Usage: /caprange [min_millions] [max_millions]\n"
                     "Example: /caprange 500 50000"
                 )
                 return
             
-            min_cap = float(context.args[0]) * 1_000_000
-            max_cap = float(context.args[1]) * 1_000_000
+            min_cap = float(args[0]) * 1_000_000
+            max_cap = float(args[1]) * 1_000_000
             
             if min_cap <= 0 or max_cap <= 0 or min_cap >= max_cap:
-                await update.message.reply_text("❌ Invalid range. Min must be less than max and both must be positive.")
+                self.send_telegram_message("❌ Invalid range. Min must be less than max and both must be positive.")
                 return
             
             self.min_market_cap = min_cap
@@ -156,45 +257,45 @@ class StockSignalBot:
             message = f"✅ Market cap range updated:\n"
             message += f"Min: ${min_cap/1e6:.0f}M\n"
             message += f"Max: ${max_cap/1e9:.1f}B"
-            await update.message.reply_text(message)
+            self.send_telegram_message(message)
             
         except ValueError:
-            await update.message.reply_text("❌ Invalid input. Please use numbers only.")
+            self.send_telegram_message("❌ Invalid input. Please use numbers only.")
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {str(e)}")
+            self.send_telegram_message(f"❌ Error: {str(e)}")
     
-    async def cmd_interval(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /interval command - set scan interval"""
+    def handle_interval(self, args):
+        """Handle interval command"""
         try:
-            if len(context.args) != 1:
-                await update.message.reply_text(
+            if len(args) != 1:
+                self.send_telegram_message(
                     "Usage: /interval [hours]\n"
                     "Example: /interval 2"
                 )
                 return
             
-            hours = float(context.args[0])
+            hours = float(args[0])
             if hours < 0.5 or hours > 24:
-                await update.message.reply_text("❌ Interval must be between 0.5 and 24 hours.")
+                self.send_telegram_message("❌ Interval must be between 0.5 and 24 hours.")
                 return
             
             self.scan_interval = int(hours * 3600)
             
             message = f"✅ Scan interval updated to {hours:.1f} hours"
-            await update.message.reply_text(message)
+            self.send_telegram_message(message)
             
         except ValueError:
-            await update.message.reply_text("❌ Invalid input. Please use a number.")
+            self.send_telegram_message("❌ Invalid input. Please use a number.")
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {str(e)}")
+            self.send_telegram_message(f"❌ Error: {str(e)}")
     
-    async def cmd_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /history command - show recent signals"""
+    def show_history(self):
+        """Show signal history"""
         if not self.signals_sent:
-            await update.message.reply_text("No signals in history yet.")
+            self.send_telegram_message("No signals in history yet.")
             return
         
-        recent_signals = sorted(list(self.signals_sent))[-10:]  # Last 10 signals
+        recent_signals = sorted(list(self.signals_sent))[-10:]
         
         message = "📜 *Recent Signals:*\n\n"
         for signal in recent_signals:
@@ -204,56 +305,7 @@ class StockSignalBot:
                 date = parts[1][:10]
                 message += f"• {symbol} - {date}\n"
         
-        await update.message.reply_text(message, parse_mode='Markdown')
-    
-    async def cmd_clear(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /clear command - clear signal history"""
-        self.signals_sent.clear()
-        self.save_signals_history()
-        await update.message.reply_text("✅ Signal history cleared.")
-    
-    def _signal_handler(self, signum, frame):
-        logger.info(f"Received signal {signum}. Shutting down gracefully...")
-        self.is_running = False
-        self.save_signals_history()
-        sys.exit(0)
-    
-    def load_signals_history(self):
-        try:
-            with open(self.signals_file, 'r') as f:
-                data = json.load(f)
-                self.signals_sent = set(data.get('signals', []))
-                logger.info(f"Loaded {len(self.signals_sent)} historical signals")
-        except FileNotFoundError:
-            logger.info("No signals history file found, starting fresh")
-        except Exception as e:
-            logger.error(f"Error loading signals history: {e}")
-    
-    def save_signals_history(self):
-        try:
-            cutoff_date = datetime.now() - timedelta(days=30)  # Keep 30 days of history
-            recent_signals = [
-                s for s in self.signals_sent 
-                if '_' in s and datetime.fromisoformat(s.split('_')[1]) > cutoff_date
-            ]
-            
-            with open(self.signals_file, 'w') as f:
-                json.dump({'signals': list(recent_signals)}, f)
-            logger.info(f"Saved {len(recent_signals)} recent signals")
-        except Exception as e:
-            logger.error(f"Error saving signals history: {e}")
-    
-    async def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
-        try:
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=message,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True
-            )
-            logger.info("Telegram message sent successfully")
-        except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+        self.send_telegram_message(message)
     
     def format_signal_message(self, signal: Dict, stock_info: Optional[Dict] = None) -> str:
         symbol = signal['symbol']
@@ -370,8 +422,7 @@ class StockSignalBot:
             
             message = self.format_signal_message(signal, signal.get('stock_info'))
             
-            # Send message synchronously
-            asyncio.run(self.send_telegram_message(message))
+            self.send_telegram_message(message)
             
             self.signals_sent.add(signal_key)
             self.total_signals += 1
@@ -407,48 +458,10 @@ class StockSignalBot:
                 message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
                 message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
             
-            asyncio.run(self.send_telegram_message(message))
+            self.send_telegram_message(message)
             
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
-    
-    async def run_bot(self):
-        """Run the Telegram bot"""
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-        
-        logger.info("Telegram bot started, listening for commands...")
-        
-        # Keep the bot running
-        while self.is_running:
-            await asyncio.sleep(1)
-        
-        await self.application.updater.stop()
-        await self.application.stop()
-        await self.application.shutdown()
-    
-    def run_scheduler(self):
-        """Run the scheduler in a separate thread"""
-        # Run initial scan
-        self.scan_for_signals()
-        
-        # Schedule scans
-        schedule.every(self.scan_interval).seconds.do(self.scan_for_signals)
-        
-        # Send status update twice daily
-        schedule.every().day.at("09:00").do(self.send_status_update)
-        schedule.every().day.at("21:00").do(self.send_status_update)
-        
-        logger.info(f"Scheduled scans every {self.scan_interval/3600:.1f} hours")
-        
-        while self.is_running:
-            try:
-                schedule.run_pending()
-                time.sleep(60)
-            except Exception as e:
-                logger.error(f"Error in scheduler: {e}")
-                time.sleep(60)
     
     def run(self):
         logger.info("=" * 50)
@@ -463,21 +476,34 @@ class StockSignalBot:
         startup_message += f"• TP/SL: +10% / -5%\n"
         startup_message += "\nType /help to see available commands."
         
-        asyncio.run(self.send_telegram_message(startup_message))
+        self.send_telegram_message(startup_message)
         
-        # Start scheduler in background thread
-        scheduler_thread = threading.Thread(target=self.run_scheduler)
-        scheduler_thread.daemon = True
-        scheduler_thread.start()
+        # Run initial scan
+        self.scan_for_signals()
         
-        # Run Telegram bot in main thread
-        try:
-            asyncio.run(self.run_bot())
-        except KeyboardInterrupt:
-            logger.info("Received keyboard interrupt")
-        finally:
-            self.save_signals_history()
-            logger.info("Upper Section Strategy Bot stopped")
+        # Schedule scans
+        schedule.every(self.scan_interval).seconds.do(self.scan_for_signals)
+        
+        # Send status update twice daily
+        schedule.every().day.at("09:00").do(self.send_status_update)
+        schedule.every().day.at("21:00").do(self.send_status_update)
+        
+        logger.info(f"Scheduled scans every {self.scan_interval/3600:.1f} hours")
+        logger.info("Telegram command polling active. Send /help for commands.")
+        
+        while self.is_running:
+            try:
+                schedule.run_pending()
+                time.sleep(60)
+            except KeyboardInterrupt:
+                logger.info("Received keyboard interrupt")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error in main loop: {e}")
+                time.sleep(60)
+        
+        self.save_signals_history()
+        logger.info("Upper Section Strategy Bot stopped")
 
 
 if __name__ == "__main__":
