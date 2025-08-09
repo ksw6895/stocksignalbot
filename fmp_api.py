@@ -94,7 +94,7 @@ class FMPAPIClient:
                 'marketCapLowerThan': max_market_cap,
                 'exchange': 'NASDAQ',
                 'isActivelyTrading': 'true',
-                'limit': 1000
+                'limit': 10000  # Set high enough to get all NASDAQ stocks (max ~8000)
             }
             
             data = self._make_request('/v3/stock-screener', params, cache_duration=3600)

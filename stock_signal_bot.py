@@ -402,13 +402,16 @@ class StockSignalBot:
                 else:
                     new_signals.append(signal)
             
-            # Process all signals (new and repeated)
-            all_signals_to_send = signals  # Send everything
-            
-            if all_signals_to_send:
-                logger.info(f"Found {len(all_signals_to_send)} total signals ({len(new_signals)} new, {len(repeated_signals)} repeated)")
-                for signal in all_signals_to_send:
-                    self.process_signal(signal)
+            # Process all signals but don't send individual messages
+            if signals:
+                logger.info(f"Found {len(signals)} total signals ({len(new_signals)} new, {len(repeated_signals)} repeated)")
+                # Just track signals without sending individual messages
+                for signal in signals:
+                    symbol = signal['symbol']
+                    signal_key = f"{symbol}_{datetime.now().isoformat()}"
+                    self.signals_sent.add(signal_key)
+                    self.total_signals += 1
+                    logger.info(f"Signal found for {symbol} - Pattern: {signal.get('pattern')} - EMA{signal.get('ema_period')}")
             else:
                 logger.info("No signals found in this scan")
             
@@ -508,18 +511,36 @@ class StockSignalBot:
             usage_percent = ((daily_limit - remaining_requests) / daily_limit) * 100
             message += f"• 일일 사용률: {usage_percent:.1f}%\n\n"
             
-            # Signal summary - 종목 코드만 간결하게 표시
+            # Signal summary - EMA 기간별로 종목 코드 구분하여 표시
             if all_signals:
                 message += "🎯 *포착된 신호 종목*\n"
                 
-                # 새로운 신호와 반복 신호 구분
-                new_symbols = [signal.get('symbol', 'N/A') for signal in new_signals]
-                repeated_symbols = [signal.get('symbol', 'N/A') for signal in all_signals if signal not in new_signals]
+                # EMA 기간별로 신호 분류
+                ema20_signals = [s for s in all_signals if s.get('ema_period') == 20]
+                ema50_signals = [s for s in all_signals if s.get('ema_period') == 50]
                 
-                if new_symbols:
-                    message += f"🆕 새로운 신호: {', '.join(new_symbols)}\n"
-                if repeated_symbols:
-                    message += f"🔄 반복 신호: {', '.join(repeated_symbols)}\n"
+                # EMA20 신호
+                if ema20_signals:
+                    ema20_new = [s.get('symbol', 'N/A') for s in ema20_signals if s in new_signals]
+                    ema20_repeat = [s.get('symbol', 'N/A') for s in ema20_signals if s not in new_signals]
+                    
+                    message += f"📊 *EMA20 신호:*\n"
+                    if ema20_new:
+                        message += f"  🆕 새로운: {', '.join(ema20_new)}\n"
+                    if ema20_repeat:
+                        message += f"  🔄 반복: {', '.join(ema20_repeat)}\n"
+                
+                # EMA50 신호
+                if ema50_signals:
+                    ema50_new = [s.get('symbol', 'N/A') for s in ema50_signals if s in new_signals]
+                    ema50_repeat = [s.get('symbol', 'N/A') for s in ema50_signals if s not in new_signals]
+                    
+                    message += f"📈 *EMA50 신호:*\n"
+                    if ema50_new:
+                        message += f"  🆕 새로운: {', '.join(ema50_new)}\n"
+                    if ema50_repeat:
+                        message += f"  🔄 반복: {', '.join(ema50_repeat)}\n"
+                
                 message += "\n"
             else:
                 message += "ℹ️ *신호 없음*\n"
