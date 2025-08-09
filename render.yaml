@@ -1,11 +1,13 @@
 services:
-  - type: web
+  - type: worker
     name: stock-signal-bot
     runtime: python
     region: oregon
-    plan: starter
-    buildCommand: pip install -r requirements.txt
-    startCommand: python render_web_wrapper.py
+    plan: starter  # $7/month for background worker
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python stock_signal_bot.py
     envVars:
       - key: PYTHON_VERSION
         value: "3.11"
@@ -20,28 +22,27 @@ services:
       - key: MAX_MARKET_CAP
         value: "50000000000"
       - key: TP_RATIO
-        value: "0.07"
+        value: "0.10"  # 10% Take Profit for Upper Section Strategy
       - key: SL_RATIO
-        value: "0.03"
+        value: "0.05"  # 5% Stop Loss for Upper Section Strategy
       - key: SCAN_INTERVAL
-        value: "3600"
-      - key: SCAN_MARKET_HOURS_ONLY
-        value: "true"
+        value: "14400"  # 4 hours in seconds
+      - key: SCAN_DURING_MARKET_HOURS_ONLY
+        value: "false"  # Run 24/7 for background worker
       - key: FMP_DAILY_LIMIT
-        value: "250"
+        value: "99999"  # Using backoff instead of hard limit
       - key: EMA_SHORT_PERIOD
-        value: "20"
+        value: "15"  # Upper Section Strategy EMA
       - key: EMA_LONG_PERIOD
-        value: "50"
+        value: "33"  # Upper Section Strategy EMA
       - key: MIN_VOLUME
         value: "100000"
       - key: MIN_PRICE
-        value: "5.0"
+        value: "1.0"
       - key: MAX_PRICE
-        value: "500.0"
+        value: "10000.0"
       - key: BATCH_SIZE
         value: "20"
       - key: LOG_LEVEL
         value: "INFO"
-    healthCheckPath: /health
-    autoDeploy: false
+    autoDeploy: true  # Auto-deploy on GitHub push
