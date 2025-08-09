@@ -74,12 +74,12 @@ class UpperSectionStrategy:
             logger.debug(f"{symbol}: Invalid pattern type: {pattern}")
             return None
         
-        # Step 4: Check if low is under EMA
+        # Step 4: Check if close is under EMA
         if not self._is_low_under_ema(df, ema_period):
-            logger.debug(f"{symbol}: Current low not below EMA{ema_period}")
+            logger.debug(f"{symbol}: Current close not below EMA{ema_period}")
             return None
         
-        logger.info(f"{symbol}: Low is below EMA{ema_period}, generating signal")
+        logger.info(f"{symbol}: Close is below EMA{ema_period}, generating signal")
         
         # Step 5: Generate trade signal
         signal = self._generate_trade_signal(df, symbol, ema_period)
@@ -237,24 +237,24 @@ class UpperSectionStrategy:
     
     def _is_low_under_ema(self, df: pd.DataFrame, period: int) -> bool:
         """
-        Check if current candle's low is below EMA
+        Check if current candle's close is below EMA
         
         Args:
             df: Candle data
             period: EMA period (15 or 33)
         
         Returns:
-            True if low < EMA, False otherwise
+            True if close < EMA, False otherwise
         """
         ema_series = compute_ema_series(df["close"], period)
         last_idx = len(df) - 1
-        curr_low = df["low"].iloc[last_idx]
+        curr_close = df["close"].iloc[last_idx]
         curr_ema = ema_series.iloc[last_idx]
         
         if pd.isna(curr_ema):
             return False
         
-        return curr_low < curr_ema
+        return curr_close < curr_ema
     
     def _generate_trade_signal(self, df: pd.DataFrame, symbol: str, ema_period: int) -> Optional[Dict]:
         """
