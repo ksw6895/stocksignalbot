@@ -393,18 +393,24 @@ class StockSignalBot:
             
             signals = [r for r in results if r is not None]
             
+            # Send all signals, but track which ones are repeated
+            repeated_signals = []
             new_signals = []
             for signal in signals:
-                signal_key = f"{signal['symbol']}_{datetime.now().isoformat()}"
-                if signal['symbol'] not in [s.split('_')[0] for s in self.signals_sent]:
+                if signal['symbol'] in [s.split('_')[0] for s in self.signals_sent]:
+                    repeated_signals.append(signal)
+                else:
                     new_signals.append(signal)
             
-            if new_signals:
-                logger.info(f"Found {len(new_signals)} new signals!")
-                for signal in new_signals:
+            # Process all signals (new and repeated)
+            all_signals_to_send = signals  # Send everything
+            
+            if all_signals_to_send:
+                logger.info(f"Found {len(all_signals_to_send)} total signals ({len(new_signals)} new, {len(repeated_signals)} repeated)")
+                for signal in all_signals_to_send:
                     self.process_signal(signal)
             else:
-                logger.info("No new signals found in this scan")
+                logger.info("No signals found in this scan")
             
             logger.info(f"Total API requests made: {self.data_fetcher.fmp_client.request_count}")
             
@@ -424,13 +430,17 @@ class StockSignalBot:
             symbol = signal['symbol']
             signal_key = f"{symbol}_{datetime.now().isoformat()}"
             
-            if signal_key in self.signals_sent:
-                return
+            # Check if this is a repeated signal
+            is_repeated = symbol in [s.split('_')[0] for s in self.signals_sent]
             
+            # Format message with repeated indicator if applicable
             message = self.format_signal_message(signal, signal.get('stock_info'))
+            if is_repeated:
+                message = "🔄 *[반복 신호]*\n" + message
             
             self.send_telegram_message(message)
             
+            # Still add to history for tracking
             self.signals_sent.add(signal_key)
             self.total_signals += 1
             
