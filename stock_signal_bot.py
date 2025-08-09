@@ -508,23 +508,22 @@ class StockSignalBot:
             usage_percent = ((daily_limit - remaining_requests) / daily_limit) * 100
             message += f"• 일일 사용률: {usage_percent:.1f}%\n\n"
             
-            # Signal summary
-            if new_signals:
-                message += "🎯 *발견된 신호*\n"
-                for signal in new_signals[:10]:  # Limit to 10 signals
-                    symbol = signal.get('symbol', 'N/A')
-                    pattern = signal.get('pattern', 'N/A')
-                    ema_period = signal.get('ema_period', 'N/A')
-                    entry = signal.get('entry', 0)
-                    tp = signal.get('take_profit', 0)
-                    message += f"• {symbol}: {pattern} (EMA{ema_period})\n"
-                    message += f"  진입: ${entry:.2f} | TP: ${tp:.2f}\n"
+            # Signal summary - 종목 코드만 간결하게 표시
+            if all_signals:
+                message += "🎯 *포착된 신호 종목*\n"
                 
-                if len(new_signals) > 10:
-                    message += f"\n... 외 {len(new_signals) - 10}개 신호\n"
+                # 새로운 신호와 반복 신호 구분
+                new_symbols = [signal.get('symbol', 'N/A') for signal in new_signals]
+                repeated_symbols = [signal.get('symbol', 'N/A') for signal in all_signals if signal not in new_signals]
+                
+                if new_symbols:
+                    message += f"🆕 새로운 신호: {', '.join(new_symbols)}\n"
+                if repeated_symbols:
+                    message += f"🔄 반복 신호: {', '.join(repeated_symbols)}\n"
+                message += "\n"
             else:
                 message += "ℹ️ *신호 없음*\n"
-                message += "이번 스캔에서 새로운 매수 신호를 발견하지 못했습니다.\n\n"
+                message += "이번 스캔에서 매수 신호를 발견하지 못했습니다.\n\n"
             
             # Market status and next scan
             market_hours = self.data_fetcher.get_market_hours()
