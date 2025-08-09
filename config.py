@@ -7,7 +7,9 @@ load_dotenv()
 
 FMP_API_KEY = os.getenv("FMP_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Support multiple chat IDs separated by comma
+TELEGRAM_CHAT_IDS = os.getenv("TELEGRAM_CHAT_IDS", os.getenv("TELEGRAM_CHAT_ID", ""))
+TELEGRAM_CHAT_ID = TELEGRAM_CHAT_IDS  # Keep for backward compatibility
 
 FMP_BASE_URL = "https://financialmodelingprep.com/api"
 
@@ -50,8 +52,8 @@ def validate_config():
     if not TELEGRAM_BOT_TOKEN:
         errors.append("TELEGRAM_BOT_TOKEN is required")
     
-    if not TELEGRAM_CHAT_ID:
-        errors.append("TELEGRAM_CHAT_ID is required")
+    if not TELEGRAM_CHAT_IDS:
+        errors.append("TELEGRAM_CHAT_IDS or TELEGRAM_CHAT_ID is required")
     
     if MIN_MARKET_CAP >= MAX_MARKET_CAP:
         errors.append("MIN_MARKET_CAP must be less than MAX_MARKET_CAP")
@@ -86,6 +88,19 @@ EXCLUDED_SYMBOLS = [
     "GOOG",
     "META",
 ]
+
+def get_chat_ids() -> List[str]:
+    """Get list of chat IDs from environment variable"""
+    if not TELEGRAM_CHAT_IDS:
+        return []
+    
+    # Support both comma and semicolon as separators
+    chat_ids = TELEGRAM_CHAT_IDS.replace(';', ',').split(',')
+    # Clean up whitespace and filter empty strings
+    chat_ids = [chat_id.strip() for chat_id in chat_ids if chat_id.strip()]
+    
+    logging.info(f"Configured {len(chat_ids)} Telegram chat IDs")
+    return chat_ids
 
 def format_number(num: float) -> str:
     if num >= 1_000_000_000:

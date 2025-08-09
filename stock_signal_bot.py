@@ -13,7 +13,7 @@ import threading
 
 from config import (
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
-    validate_config, format_number
+    validate_config, format_number, get_chat_ids
 )
 from stocks import StockDataFetcher
 from decision import UpperSectionStrategy
@@ -30,7 +30,8 @@ class StockSignalBot:
         validate_config()
         
         self.bot_token = TELEGRAM_BOT_TOKEN
-        self.chat_id = TELEGRAM_CHAT_ID
+        self.chat_ids = get_chat_ids()  # Get list of chat IDs
+        self.chat_id = self.chat_ids[0] if self.chat_ids else None  # Primary chat ID for commands
         self.data_fetcher = StockDataFetcher()
         self.strategy = UpperSectionStrategy()
         
@@ -92,21 +93,28 @@ class StockSignalBot:
             logger.error(f"Error saving signals history: {e}")
     
     def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
-        try:
-            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': parse_mode,
-                'disable_web_page_preview': True
-            }
-            response = requests.post(url, json=payload, timeout=10)
-            if response.status_code == 200:
-                logger.info("Telegram message sent successfully")
-            else:
-                logger.error(f"Failed to send Telegram message: {response.text}")
-        except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+        """Send message to all configured chat IDs"""
+        if not self.chat_ids:
+            logger.error("No chat IDs configured")
+            return
+        
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        
+        for chat_id in self.chat_ids:
+            try:
+                payload = {
+                    'chat_id': chat_id,
+                    'text': message,
+                    'parse_mode': parse_mode,
+                    'disable_web_page_preview': True
+                }
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    logger.info(f"Telegram message sent successfully to {chat_id}")
+                else:
+                    logger.error(f"Failed to send Telegram message to {chat_id}: {response.text}")
+            except Exception as e:
+                logger.error(f"Failed to send Telegram message to {chat_id}: {e}")
     
     def get_updates(self, offset: Optional[int] = None):
         """Get updates from Telegram"""
@@ -157,8 +165,8 @@ class StockSignalBot:
             command = parts[0].lower()
             args = parts[1:] if len(parts) > 1 else []
             
-            # Only respond to commands from authorized chat
-            if str(chat_id) != str(self.chat_id):
+            # Only respond to commands from authorized chats
+            if str(chat_id) not in [str(cid) for cid in self.chat_ids]:
                 return
             
             if command == '/start':
@@ -516,30 +524,30 @@ class StockSignalBot:
                 message += "🎯 *포착된 신호 종목*\n"
                 
                 # EMA 기간별로 신호 분류
-                ema20_signals = [s for s in all_signals if s.get('ema_period') == 20]
-                ema50_signals = [s for s in all_signals if s.get('ema_period') == 50]
+                ema15_signals = [s for s in all_signals if s.get('ema_period') == 15]
+                ema33_signals = [s for s in all_signals if s.get('ema_period') == 33]
                 
-                # EMA20 신호
-                if ema20_signals:
-                    ema20_new = [s.get('symbol', 'N/A') for s in ema20_signals if s in new_signals]
-                    ema20_repeat = [s.get('symbol', 'N/A') for s in ema20_signals if s not in new_signals]
+                # EMA15 신호
+                if ema15_signals:
+                    ema15_new = [s.get('symbol', 'N/A') for s in ema15_signals if s in new_signals]
+                    ema15_repeat = [s.get('symbol', 'N/A') for s in ema15_signals if s not in new_signals]
                     
-                    message += f"📊 *EMA20 신호:*\n"
-                    if ema20_new:
-                        message += f"  🆕 새로운: {', '.join(ema20_new)}\n"
-                    if ema20_repeat:
-                        message += f"  🔄 반복: {', '.join(ema20_repeat)}\n"
+                    message += f"📊 *EMA15 신호:*\n"
+                    if ema15_new:
+                        message += f"  🆕 새로운: {', '.join(ema15_new)}\n"
+                    if ema15_repeat:
+                        message += f"  🔄 반복: {', '.join(ema15_repeat)}\n"
                 
-                # EMA50 신호
-                if ema50_signals:
-                    ema50_new = [s.get('symbol', 'N/A') for s in ema50_signals if s in new_signals]
-                    ema50_repeat = [s.get('symbol', 'N/A') for s in ema50_signals if s not in new_signals]
+                # EMA33 신호
+                if ema33_signals:
+                    ema33_new = [s.get('symbol', 'N/A') for s in ema33_signals if s in new_signals]
+                    ema33_repeat = [s.get('symbol', 'N/A') for s in ema33_signals if s not in new_signals]
                     
-                    message += f"📈 *EMA50 신호:*\n"
-                    if ema50_new:
-                        message += f"  🆕 새로운: {', '.join(ema50_new)}\n"
-                    if ema50_repeat:
-                        message += f"  🔄 반복: {', '.join(ema50_repeat)}\n"
+                    message += f"📈 *EMA33 신호:*\n"
+                    if ema33_new:
+                        message += f"  🆕 새로운: {', '.join(ema33_new)}\n"
+                    if ema33_repeat:
+                        message += f"  🔄 반복: {', '.join(ema33_repeat)}\n"
                 
                 message += "\n"
             else:
