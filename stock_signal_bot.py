@@ -92,29 +92,32 @@ class StockSignalBot:
         except Exception as e:
             logger.error(f"Error saving signals history: {e}")
     
-    def send_telegram_message(self, message: str, parse_mode: str = 'Markdown'):
-        """Send message to all configured chat IDs"""
+    def send_telegram_message(self, message: str, parse_mode: str = 'Markdown', chat_id: str = None):
+        """Send message to specific chat ID or all configured chat IDs"""
         if not self.chat_ids:
             logger.error("No chat IDs configured")
             return
         
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         
-        for chat_id in self.chat_ids:
+        # If specific chat_id provided, send only to that chat
+        target_chats = [chat_id] if chat_id else self.chat_ids
+        
+        for target_id in target_chats:
             try:
                 payload = {
-                    'chat_id': chat_id,
+                    'chat_id': target_id,
                     'text': message,
                     'parse_mode': parse_mode,
                     'disable_web_page_preview': True
                 }
                 response = requests.post(url, json=payload, timeout=10)
                 if response.status_code == 200:
-                    logger.info(f"Telegram message sent successfully to {chat_id}")
+                    logger.info(f"Telegram message sent successfully to {target_id}")
                 else:
-                    logger.error(f"Failed to send Telegram message to {chat_id}: {response.text}")
+                    logger.error(f"Failed to send Telegram message to {target_id}: {response.text}")
             except Exception as e:
-                logger.error(f"Failed to send Telegram message to {chat_id}: {e}")
+                logger.error(f"Failed to send Telegram message to {target_id}: {e}")
     
     def get_updates(self, offset: Optional[int] = None):
         """Get updates from Telegram"""
@@ -173,7 +176,7 @@ class StockSignalBot:
                 message = "🚀 *Upper Section Strategy Bot*\n\n"
                 message += "Welcome! This bot monitors NASDAQ stocks for Upper Section patterns.\n\n"
                 message += "Type /help to see available commands."
-                self.send_telegram_message(message)
+                self.send_telegram_message(message, chat_id=str(chat_id))
             
             elif command == '/help':
                 message = "📚 *Available Commands:*\n\n"
@@ -187,32 +190,32 @@ class StockSignalBot:
                 message += "  Example: /interval 2\n"
                 message += "/history - Show recent signals\n"
                 message += "/clear - Clear signal history\n"
-                self.send_telegram_message(message)
+                self.send_telegram_message(message, chat_id=str(chat_id))
             
             elif command == '/status':
-                self.send_status_message()
+                self.send_status_message(chat_id=str(chat_id))
             
             elif command == '/scan':
                 if self.is_scanning:
-                    self.send_telegram_message("⚠️ A scan is already in progress. Please wait...")
+                    self.send_telegram_message("⚠️ A scan is already in progress. Please wait...", chat_id=str(chat_id))
                 else:
-                    self.send_telegram_message("🔍 Starting immediate scan...")
-                    thread = threading.Thread(target=self.scan_for_signals)
+                    self.send_telegram_message("🔍 Starting immediate scan...", chat_id=str(chat_id))
+                    thread = threading.Thread(target=lambda: self.scan_for_signals(requester_chat_id=str(chat_id)))
                     thread.start()
             
             elif command == '/caprange':
-                self.handle_caprange(args)
+                self.handle_caprange(args, chat_id=str(chat_id))
             
             elif command == '/interval':
-                self.handle_interval(args)
+                self.handle_interval(args, chat_id=str(chat_id))
             
             elif command == '/history':
-                self.show_history()
+                self.show_history(chat_id=str(chat_id))
             
             elif command == '/clear':
                 self.signals_sent.clear()
                 self.save_signals_history()
-                self.send_telegram_message("✅ Signal history cleared.")
+                self.send_telegram_message("✅ Signal history cleared.", chat_id=str(chat_id))
             
         except Exception as e:
             logger.error(f"Error handling command: {e}")
@@ -274,35 +277,36 @@ class StockSignalBot:
         except Exception as e:
             self.send_telegram_message(f"❌ Error: {str(e)}")
     
-    def handle_interval(self, args):
+    def handle_interval(self, args, chat_id: str = None):
         """Handle interval command"""
         try:
             if len(args) != 1:
                 self.send_telegram_message(
                     "Usage: /interval [hours]\n"
-                    "Example: /interval 2"
+                    "Example: /interval 2",
+                    chat_id=chat_id
                 )
                 return
             
             hours = float(args[0])
             if hours < 0.5 or hours > 24:
-                self.send_telegram_message("❌ Interval must be between 0.5 and 24 hours.")
+                self.send_telegram_message("❌ Interval must be between 0.5 and 24 hours.", chat_id=chat_id)
                 return
             
             self.scan_interval = int(hours * 3600)
             
             message = f"✅ Scan interval updated to {hours:.1f} hours"
-            self.send_telegram_message(message)
+            self.send_telegram_message(message, chat_id=chat_id)
             
         except ValueError:
-            self.send_telegram_message("❌ Invalid input. Please use a number.")
+            self.send_telegram_message("❌ Invalid input. Please use a number.", chat_id=chat_id)
         except Exception as e:
-            self.send_telegram_message(f"❌ Error: {str(e)}")
+            self.send_telegram_message(f"❌ Error: {str(e)}", chat_id=chat_id)
     
-    def show_history(self):
+    def show_history(self, chat_id: str = None):
         """Show signal history"""
         if not self.signals_sent:
-            self.send_telegram_message("No signals in history yet.")
+            self.send_telegram_message("No signals in history yet.", chat_id=chat_id)
             return
         
         recent_signals = sorted(list(self.signals_sent))[-10:]
@@ -315,7 +319,7 @@ class StockSignalBot:
                 date = parts[1][:10]
                 message += f"• {symbol} - {date}\n"
         
-        self.send_telegram_message(message)
+        self.send_telegram_message(message, chat_id=chat_id)
     
     def format_signal_message(self, signal: Dict, stock_info: Optional[Dict] = None) -> str:
         symbol = signal['symbol']
@@ -349,7 +353,7 @@ class StockSignalBot:
         
         return message
     
-    def scan_for_signals(self):
+    def scan_for_signals(self, requester_chat_id: str = None):
         if self.is_scanning:
             logger.warning("Scan already in progress, skipping...")
             return
@@ -426,13 +430,13 @@ class StockSignalBot:
             logger.info(f"Total API requests made: {self.data_fetcher.fmp_client.request_count}")
             
             # Send scan completion summary
-            self.send_scan_summary(stocks, signals, new_signals)
+            self.send_scan_summary(stocks, signals, new_signals, requester_chat_id)
             
         except Exception as e:
             logger.error(f"Error during scan: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             # Send error summary
-            self.send_error_summary(str(e))
+            self.send_error_summary(str(e), requester_chat_id)
         finally:
             self.is_scanning = False
     
@@ -491,7 +495,7 @@ class StockSignalBot:
         except Exception as e:
             logger.error(f"Error sending status update: {e}")
     
-    def send_scan_summary(self, stocks: List[Dict], all_signals: List[Dict], new_signals: List[Dict]):
+    def send_scan_summary(self, stocks: List[Dict], all_signals: List[Dict], new_signals: List[Dict], requester_chat_id: str = None):
         """Send comprehensive scan completion summary"""
         try:
             scan_end_time = datetime.now()
@@ -575,13 +579,17 @@ class StockSignalBot:
             message += "\n" + "=" * 30
             message += "\n_Upper Section Strategy Bot v1.0_"
             
-            self.send_telegram_message(message)
+            # Send to requester only if this was a manual scan, otherwise send to all
+            if requester_chat_id:
+                self.send_telegram_message(message, chat_id=requester_chat_id)
+            else:
+                self.send_telegram_message(message)  # Send to all for scheduled scans
             logger.info("Scan summary sent successfully")
             
         except Exception as e:
             logger.error(f"Error sending scan summary: {e}")
     
-    def send_error_summary(self, error_msg: str):
+    def send_error_summary(self, error_msg: str, requester_chat_id: str = None):
         """Send error summary when scan fails"""
         try:
             message = "⚠️ *스캔 오류 발생*\n\n"
@@ -592,7 +600,10 @@ class StockSignalBot:
                 next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
                 message += f"\n⏰ 다음 스캔: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
             
-            self.send_telegram_message(message)
+            if requester_chat_id:
+                self.send_telegram_message(message, chat_id=requester_chat_id)
+            else:
+                self.send_telegram_message(message)
             
         except Exception as e:
             logger.error(f"Error sending error summary: {e}")
