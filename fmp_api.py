@@ -15,6 +15,7 @@ class FMPAPIClient:
         self.api_key = api_key
         self.daily_limit = daily_limit
         self.request_count = 0
+        self.request_timestamps = deque()  # Track request timestamps for rate limiting
         self.cache = {}
         self.cache_expiry = {}
         self.session = requests.Session()
@@ -45,6 +46,7 @@ class FMPAPIClient:
             try:
                 response = self.session.get(url, params=params, timeout=30)
                 self.request_count += 1
+                self.request_timestamps.append(datetime.now())  # Track request timestamp
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -260,5 +262,9 @@ class FMPAPIClient:
         now = datetime.now()
         day_ago = now - timedelta(days=1)
         
-        recent_requests = sum(1 for ts in self.request_timestamps if ts > day_ago)
+        # Clean up old timestamps
+        while self.request_timestamps and self.request_timestamps[0] <= day_ago:
+            self.request_timestamps.popleft()
+        
+        recent_requests = len(self.request_timestamps)
         return max(0, self.daily_limit - recent_requests)
