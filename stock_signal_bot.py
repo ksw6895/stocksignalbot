@@ -220,7 +220,7 @@ class StockSignalBot:
         except Exception as e:
             logger.error(f"Error handling command: {e}")
     
-    def send_status_message(self):
+    def send_status_message(self, chat_id=None):
         """Send status message"""
         uptime = datetime.now() - self.start_time
         hours = uptime.total_seconds() / 3600
@@ -243,15 +243,16 @@ class StockSignalBot:
             message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
             message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
         
-        self.send_telegram_message(message)
+        self.send_telegram_message(message, chat_id=chat_id)
     
-    def handle_caprange(self, args):
+    def handle_caprange(self, args, chat_id=None):
         """Handle caprange command"""
         try:
             if len(args) != 2:
                 self.send_telegram_message(
                     "Usage: /caprange [min_millions] [max_millions]\n"
-                    "Example: /caprange 500 50000"
+                    "Example: /caprange 500 50000",
+                    chat_id=chat_id
                 )
                 return
             
@@ -259,7 +260,7 @@ class StockSignalBot:
             max_cap = float(args[1]) * 1_000_000
             
             if min_cap <= 0 or max_cap <= 0 or min_cap >= max_cap:
-                self.send_telegram_message("❌ Invalid range. Min must be less than max and both must be positive.")
+                self.send_telegram_message("❌ Invalid range. Min must be less than max and both must be positive.", chat_id=chat_id)
                 return
             
             self.min_market_cap = min_cap
@@ -270,7 +271,7 @@ class StockSignalBot:
             message = f"✅ Market cap range updated:\n"
             message += f"Min: ${min_cap/1e6:.0f}M\n"
             message += f"Max: ${max_cap/1e9:.1f}B"
-            self.send_telegram_message(message)
+            self.send_telegram_message(message, chat_id=chat_id)
             
         except ValueError:
             self.send_telegram_message("❌ Invalid input. Please use numbers only.")
