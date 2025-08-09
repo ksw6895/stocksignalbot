@@ -1,165 +1,243 @@
-# Crypto Signal Bot
+# Stock Signal Bot - NASDAQ Scanner
 
-주봉 캔들 기반 암호화폐 자동 시그널 봇입니다. 실시간으로 시가총액 기준으로 필터링된 코인들을 모니터링하며, 매수 시그널 발생 시 텔레그램으로 알림을 보냅니다.
+A sophisticated stock market signal bot that monitors NASDAQ stocks for buy opportunities using the Kwon Strategy. Optimized for deployment on Render's starter plan.
 
-## 주요 기능
+## Features
 
-- **실시간 시가총액 필터링**: 매 스캔마다 CoinMarketCap API를 통해 최신 시가총액 데이터로 코인 필터링
-- **주봉 기반 전략**: Kwon Strategy를 사용한 주봉(1W) 캔들 분석
-- **텔레그램 알림**: 매수 시그널 발생 시 즉시 텔레그램 봇을 통해 알림
-- **24시간 자동 실행**: Render 등의 클라우드 서비스에서 24시간 실행 가능
+- 📊 **NASDAQ Stock Scanning**: Monitors stocks within customizable market cap range
+- 📈 **Kwon Strategy**: Advanced pattern recognition on weekly candles
+- 🎯 **Smart Filtering**: Market cap, volume, and price filters
+- 📱 **Telegram Notifications**: Real-time buy signals with entry/exit points
+- 🌐 **Render Deployment**: Optimized for 512MB RAM constraint
+- 📉 **FMP API Integration**: Comprehensive stock market data
+- ⚡ **Memory Efficient**: Batch processing and smart caching
+- 🕐 **Market Hours Aware**: Scans only during trading hours
 
-## 전략 설명
+## Quick Start
 
-이 봇은 다음과 같은 조건에서 매수 시그널을 생성합니다:
+### Prerequisites
 
-1. 최근 5개 주봉 내에서 단일 최고점 식별
-2. 최고점 이후 하락 패턴 확인
-3. 현재 저가가 EMA(15 또는 33) 아래에 위치
-4. 매수가: EMA 가격
-5. 목표가(TP): 매수가 + 10% (기본값)
-6. 손절가(SL): 매수가 - 5% (기본값)
+1. **FMP API Key**: Sign up at [Financial Modeling Prep](https://site.financialmodelingprep.com/developer/docs)
+   - Free tier: 250 requests/day
+   - Starter: 750 requests/day ($14/month)
 
-## 설치 방법
+2. **Telegram Bot**: 
+   - Create bot via [@BotFather](https://t.me/botfather)
+   - Get your chat ID
 
-### 1. 필요 사항
+3. **Python 3.11+**: Required for running locally
 
-- Python 3.11 이상
-- Binance API 키
-- CoinMarketCap API 키
-- Telegram Bot 토큰 및 Chat ID
-
-### 2. 의존성 설치
+### Local Installation
 
 ```bash
+# Clone the repository
+git clone <your-repo-url>
+cd cryptosignal-1
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure environment
+cp .env.stock.example .env
+# Edit .env with your API keys
+
+# Run the bot
+./run_local_stock.sh
+
+# Or with web interface
+./run_local_stock.sh --web
 ```
 
-### 3. 환경 변수 설정
+## Render Deployment
 
-`.env.example` 파일을 복사하여 `.env` 파일을 생성하고 필요한 정보를 입력합니다:
+### Automatic Deployment (Recommended)
+
+1. Push code to GitHub/GitLab
+2. Connect repository to Render
+3. Render will auto-detect `render.yaml`
+4. Add environment variables in Render dashboard
+5. Deploy!
+
+### Manual Deployment
 
 ```bash
-cp .env.example .env
+# Run deployment helper
+./deploy_to_render.sh
+
+# Follow the interactive guide
 ```
 
-`.env` 파일 내용:
+### Render Configuration
+
+- **Plan**: Starter ($7/month)
+- **Region**: Oregon (US West)
+- **Memory**: 512MB
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `python render_web_wrapper.py`
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FMP_API_KEY` | FMP API key (required) | - |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token (required) | - |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID (required) | - |
+| `MIN_MARKET_CAP` | Minimum market cap filter | $500M |
+| `MAX_MARKET_CAP` | Maximum market cap filter | $50B |
+| `TP_RATIO` | Take profit percentage | 7% |
+| `SL_RATIO` | Stop loss percentage | 3% |
+| `SCAN_INTERVAL` | Scan frequency in seconds | 3600 |
+| `SCAN_MARKET_HOURS_ONLY` | Only scan during market hours | true |
+
+### Watchlist Mode
+
+Create `watchlist.txt` to monitor specific stocks:
+
 ```
-# Binance API Configuration
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_API_SECRET=your_binance_api_secret
-
-# CoinMarketCap API Configuration
-COINMARKETCAP_API_KEY=your_coinmarketcap_api_key
-
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_telegram_chat_id
-
-# Trading Parameters (Optional)
-TP_RATIO=0.1  # 목표가 비율 (10%)
-SL_RATIO=0.05  # 손절가 비율 (5%)
-
-# Market Cap Filter Parameters (Optional)
-MIN_MARKET_CAP=150000000  # 최소 시가총액 (1.5억 달러)
-MAX_MARKET_CAP=20000000000  # 최대 시가총액 (200억 달러)
-CMC_MAX_PAGES=5  # CoinMarketCap에서 가져올 페이지 수
+AAPL
+MSFT
+GOOGL
+# Comments supported
+TSLA
 ```
 
-## 사용 방법
+## Strategy Details
 
-### 실시간 시그널 봇 실행
+### Kwon Strategy for Stocks
+
+The bot identifies potential reversal patterns:
+
+1. **Peak Detection**: Single peak in recent 10 weeks
+2. **Bearish Confirmation**: Bearish candles after peak
+3. **EMA Support**: Current price near EMA(20) or EMA(50)
+4. **Volume Analysis**: Above-average volume preferred
+5. **Risk Management**: Automatic TP/SL calculation
+
+### Signal Criteria
+
+- Peak formed 2-7 weeks ago
+- Price pullback 10-30% from peak
+- Current low below EMA
+- Risk/Reward ratio > 1.5
+- Volume ratio > 0.5x average
+
+## API Endpoints (Web Mode)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/status` | GET | Detailed bot status |
+| `/metrics` | GET | Prometheus metrics |
+| `/trigger-scan` | POST | Manual scan trigger |
+| `/clear-cache` | POST | Clear data cache |
+
+## API Rate Limits
+
+### FMP Free Tier (250 requests/day)
+- ~10-12 full scans per day
+- Monitor 50-100 stocks effectively
+
+### FMP Starter ($14/month, 750 requests/day)
+- ~30-35 full scans per day
+- Monitor 200+ stocks effectively
+
+## Memory Optimization
+
+The bot is optimized for Render's 512MB limit:
+
+- Batch processing (20 stocks at a time)
+- Incremental garbage collection
+- LRU caching with size limits
+- Streaming JSON parsing
+- Automatic cache cleanup
+
+## Monitoring
+
+### Telegram Commands
+The bot sends:
+- Startup confirmation
+- Buy signals with full analysis
+- Daily summary at market close
+- Error notifications
+
+### Web Dashboard
+Access at `https://your-app.onrender.com/status`:
+- Current scan status
+- API requests remaining
+- Memory usage
+- Signal history
+
+## Troubleshooting
+
+### Common Issues
+
+1. **High Memory Usage**
+   - Reduce `BATCH_SIZE`
+   - Lower cache duration
+   - Limit market cap range
+
+2. **API Rate Limits**
+   - Increase `SCAN_INTERVAL`
+   - Use watchlist mode
+   - Upgrade FMP plan
+
+3. **No Signals**
+   - Check market conditions
+   - Verify strategy parameters
+   - Review filtered stocks
+
+### Logs
 
 ```bash
-python crypto_signal_bot.py
+# View Render logs
+render logs --tail
+
+# Local debugging
+LOG_LEVEL=DEBUG ./run_local_stock.sh
 ```
 
-봇이 시작되면:
-- 즉시 첫 스캔을 실행합니다
-- 매시간마다 자동으로 스캔을 반복합니다
-- 매일 12:00 UTC에 상태 업데이트를 전송합니다
+## Development
 
-### 백테스팅 실행 (선택사항)
-
-과거 데이터로 전략을 테스트하려면:
-
-```bash
-python KwontBot.py
-```
-
-## Render 배포 방법
-
-1. GitHub에 코드를 푸시합니다
-2. Render.com에서 새 Worker 서비스를 생성합니다
-3. GitHub 저장소를 연결합니다
-4. 환경 변수를 설정합니다:
-   - BINANCE_API_KEY
-   - BINANCE_API_SECRET
-   - COINMARKETCAP_API_KEY
-   - TELEGRAM_BOT_TOKEN
-   - TELEGRAM_CHAT_ID
-   - 기타 선택적 변수들
-
-5. 배포를 시작합니다
-
-## 파일 구조
+### Project Structure
 
 ```
-.
-├── crypto_signal_bot.py    # 메인 실시간 시그널 봇
-├── backtest.py            # 백테스팅 로직
-├── decision.py            # Kwon 전략 구현
-├── indicators.py          # 기술적 지표 계산
-├── symbols.py             # 심볼 관리 및 API 통신
-├── config.py              # 설정 파일
-├── analyzeData.py         # 차트 분석
-├── KwontBot.py            # 백테스팅 인터페이스
-├── requirements.txt       # Python 패키지 목록
-├── .env.example          # 환경 변수 예시
-├── .gitignore            # Git 제외 파일
-├── render.yaml           # Render 배포 설정
-└── runtime.txt           # Python 버전 지정
+├── fmp_api.py           # FMP API client
+├── config_stock.py      # Configuration
+├── stocks.py            # Stock data fetching
+├── decision_stock.py    # Kwon strategy
+├── indicators.py        # Technical indicators
+├── stock_signal_bot.py  # Main bot logic
+├── render_web_wrapper.py # Web server
+├── render.yaml          # Render config
+└── requirements.txt     # Dependencies
 ```
 
-## API 키 발급 방법
+### Testing Locally
 
-### Binance API
-1. [Binance](https://www.binance.com)에 로그인
-2. 계정 설정 → API 관리
-3. 새 API 키 생성
-4. Edit restrictions 클릭:
-   - ✅ Enable Reading (읽기만 체크)
-   - ❌ 다른 모든 권한은 해제
-   - IP access restrictions: **"Unrestricted"** 선택
-5. Save 클릭
+```python
+# Test FMP connection
+python -c "from fmp_api import FMPAPIClient; client = FMPAPIClient('YOUR_KEY'); print(client.is_market_open())"
 
-### CoinMarketCap API
-1. [CoinMarketCap](https://coinmarketcap.com/api/) 개발자 포털 방문
-2. 무료 계정 생성
-3. API 키 발급
+# Test strategy
+python -c "from stocks import StockDataFetcher; fetcher = StockDataFetcher(); print(fetcher.get_filtered_stocks()[:5])"
+```
 
-### Telegram Bot
-1. Telegram에서 @BotFather 검색
-2. `/newbot` 명령어로 새 봇 생성
-3. 봇 토큰 저장
-4. 봇과 대화 시작 후 @userinfobot으로 Chat ID 확인
+## License
 
-## 주의사항
+MIT License - See LICENSE file
 
-- 이 봇은 투자 조언이 아닙니다. 실제 거래 전 충분한 검토가 필요합니다.
-- API 키는 절대 공개하지 마세요.
-- 시가총액 필터링은 CoinMarketCap API 요청 한도에 따라 제한될 수 있습니다.
+## Support
 
-## 문제 해결
+- Create an issue on GitHub
+- Check logs for error details
+- Verify API keys and limits
 
-### 텔레그램 메시지가 오지 않는 경우
-- Chat ID가 올바른지 확인
-- 봇과의 대화가 시작되었는지 확인
+## Disclaimer
 
-### API 오류가 발생하는 경우
-- API 키가 올바른지 확인
-- API 요청 한도를 초과하지 않았는지 확인
-
-### 심볼을 찾을 수 없는 경우
-- 시가총액 범위 조정 (MIN_MARKET_CAP, MAX_MARKET_CAP)
-- CMC_MAX_PAGES 값 증가
+This bot is for educational purposes only. Always do your own research before making investment decisions. Past performance does not guarantee future results.

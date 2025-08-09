@@ -1,7 +1,7 @@
-pandas
-python-binance
-python-dotenv
-python-telegram-bot
-schedule
-requests
-flask 
+flask==3.0.0
+python-dotenv==1.0.0
+python-telegram-bot==20.7
+schedule==1.2.0
+requests==2.31.0
+psutil==5.9.6
+gunicorn==21.2.0

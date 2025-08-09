@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: stock-signal-bot
+    runtime: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_web_wrapper.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: FMP_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: MIN_MARKET_CAP
+        value: "500000000"
+      - key: MAX_MARKET_CAP
+        value: "50000000000"
+      - key: TP_RATIO
+        value: "0.07"
+      - key: SL_RATIO
+        value: "0.03"
+      - key: SCAN_INTERVAL
+        value: "3600"
+      - key: SCAN_MARKET_HOURS_ONLY
+        value: "true"
+      - key: FMP_DAILY_LIMIT
+        value: "250"
+      - key: EMA_SHORT_PERIOD
+        value: "20"
+      - key: EMA_LONG_PERIOD
+        value: "50"
+      - key: MIN_VOLUME
+        value: "100000"
+      - key: MIN_PRICE
+        value: "5.0"
+      - key: MAX_PRICE
+        value: "500.0"
+      - key: BATCH_SIZE
+        value: "20"
+      - key: LOG_LEVEL
+        value: "INFO"
+    healthCheckPath: /health
+    autoDeploy: false
