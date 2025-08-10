@@ -105,17 +105,29 @@ class StockSignalBot:
         
         for target_id in target_chats:
             try:
+                # Ensure chat_id is a string
+                target_id_str = str(target_id)
+                
+                # Check if bot has been added to the chat first
+                # Try to get chat info to verify bot has access
+                check_url = f"https://api.telegram.org/bot{self.bot_token}/getChat"
+                check_response = requests.post(check_url, json={'chat_id': target_id_str}, timeout=5)
+                
+                if check_response.status_code != 200:
+                    logger.error(f"Bot doesn't have access to chat {target_id_str}. User needs to start conversation with bot first.")
+                    continue
+                
                 payload = {
-                    'chat_id': target_id,
+                    'chat_id': target_id_str,
                     'text': message,
                     'parse_mode': parse_mode,
                     'disable_web_page_preview': True
                 }
                 response = requests.post(url, json=payload, timeout=10)
                 if response.status_code == 200:
-                    logger.info(f"Telegram message sent successfully to {target_id}")
+                    logger.info(f"Telegram message sent successfully to {target_id_str}")
                 else:
-                    logger.error(f"Failed to send Telegram message to {target_id}: {response.text}")
+                    logger.error(f"Failed to send Telegram message to {target_id_str}: {response.text}")
             except Exception as e:
                 logger.error(f"Failed to send Telegram message to {target_id}: {e}")
     

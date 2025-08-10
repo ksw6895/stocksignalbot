@@ -15,9 +15,7 @@ class FMPAPIClient:
         self.api_key = api_key
         self.daily_limit = daily_limit
         self.request_count = 0
-        self.request_timestamps = deque()  # Track request timestamps for rate limiting
-        self.cache = {}
-        self.cache_expiry = {}
+        self.request_timestamps = deque(maxlen=1000)  # Track request timestamps with limit
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'StockSignalBot/1.0'
@@ -28,14 +26,6 @@ class FMPAPIClient:
         self.base_delay = 1.0  # Start with 1 second
         
     def _make_request(self, endpoint: str, params: Optional[Dict] = None, cache_duration: int = 300) -> Any:
-        cache_key = f"{endpoint}:{str(params)}"
-        now = datetime.now()
-        
-        if cache_key in self.cache and cache_key in self.cache_expiry:
-            if self.cache_expiry[cache_key] > now:
-                logger.debug(f"Cache hit for {endpoint}")
-                return self.cache[cache_key]
-        
         if params is None:
             params = {}
         params['apikey'] = self.api_key
@@ -50,8 +40,6 @@ class FMPAPIClient:
                 
                 if response.status_code == 200:
                     data = response.json()
-                    self.cache[cache_key] = data
-                    self.cache_expiry[cache_key] = now + timedelta(seconds=cache_duration)
                     return data
                 elif response.status_code == 429:
                     # Rate limit hit - exponential backoff
@@ -97,7 +85,7 @@ class FMPAPIClient:
                 'limit': 10000  # Set high enough to get all NASDAQ stocks (max ~8000)
             }
             
-            data = self._make_request('/v3/stock-screener', params, cache_duration=3600)
+            data = self._make_request('/v3/stock-screener', params)
             
             if not data:
                 return []
@@ -126,7 +114,7 @@ class FMPAPIClient:
                 'to': to_date
             }
             
-            data = self._make_request(f'/v3/historical-price-full/{symbol}', params, cache_duration=3600)
+            data = self._make_request(f'/v3/historical-price-full/{symbol}', params)
             
             if not data or 'historical' not in data:
                 return []
@@ -182,7 +170,7 @@ class FMPAPIClient:
     
     def get_company_profile(self, symbol: str) -> Optional[Dict]:
         try:
-            data = self._make_request(f'/v3/profile/{symbol}', cache_duration=7200)
+            data = self._make_request(f'/v3/profile/{symbol}')
             
             if data and len(data) > 0:
                 return data[0]
@@ -194,7 +182,7 @@ class FMPAPIClient:
     
     def get_quote(self, symbol: str) -> Optional[Dict]:
         try:
-            data = self._make_request(f'/v3/quote/{symbol}', cache_duration=60)
+            data = self._make_request(f'/v3/quote/{symbol}')
             
             if data and len(data) > 0:
                 return data[0]
@@ -213,7 +201,7 @@ class FMPAPIClient:
             }
             
             endpoint = f'/v3/technical_indicator/{interval}/{indicator.upper()}/{symbol}'
-            data = self._make_request(endpoint, params, cache_duration=3600)
+            data = self._make_request(endpoint, params)
             
             return data if data else None
             
@@ -223,7 +211,7 @@ class FMPAPIClient:
     
     def is_market_open(self) -> bool:
         try:
-            data = self._make_request('/v3/is-the-market-open', cache_duration=60)
+            data = self._make_request('/v3/is-the-market-open')
             return data.get('isTheMarketOpen', False)
         except Exception as e:
             logger.error(f"Failed to check market status: {e}")
@@ -239,7 +227,7 @@ class FMPAPIClient:
     
     def get_market_hours(self) -> Dict:
         try:
-            data = self._make_request('/v3/market-hours', cache_duration=3600)
+            data = self._make_request('/v3/market-hours')
             return data if data else {
                 'isTheMarketOpen': False,
                 'marketOpen': '09:30:00',
@@ -254,9 +242,8 @@ class FMPAPIClient:
             }
     
     def clear_cache(self):
-        self.cache.clear()
-        self.cache_expiry.clear()
-        logger.info("FMP API cache cleared")
+        # No cache to clear anymore
+        logger.info("Cache functionality removed")
     
     def get_remaining_requests(self) -> int:
         now = datetime.now()
