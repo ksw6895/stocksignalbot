@@ -3,7 +3,8 @@ import logging
 import time
 import schedule
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, time as dtime
+from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 import json
 import signal
@@ -198,8 +199,12 @@ class StockSignalBot:
                 message += "/scan - Trigger an immediate scan\n"
                 message += "/caprange [min] [max] - Set market cap range (in millions)\n"
                 message += "  Example: /caprange 500 50000\n"
-                message += "/interval [hours] - Set scan interval\n"
-                message += "  Example: /interval 2\n"
+                # Show ET and local schedule and deprecation note
+                local_times = self._today_local_schedule_times()
+                message += "(i) Scans run 06:45 / 12:45 / 18:00 ET (fixed).\n"
+                if len(local_times) == 3:
+                    message += f"    Local times today: {local_times[0]} / {local_times[1]} / {local_times[2]}\n"
+                message += "(i) /interval is deprecated.\n"
                 message += "/history - Show recent signals\n"
                 message += "/clear - Clear signal history\n"
                 self.send_telegram_message(message, chat_id=str(chat_id))
@@ -244,16 +249,25 @@ class StockSignalBot:
         message += f"• Signals Found: {self.total_signals}\n"
         message += f"• Stocks Monitored: NASDAQ\n"
         message += f"• API Requests: {self.data_fetcher.fmp_client.request_count}\n"
-        message += f"• Scan Interval: {self.scan_interval/3600:.1f} hours\n"
+        # Show ET and today's local equivalents
+        local_times = self._today_local_schedule_times()
+        message += "• Scan Times (ET): 06:45, 12:45, 18:00\n"
+        if len(local_times) == 3:
+            message += f"• Scan Times (Local): {local_times[0]}, {local_times[1]}, {local_times[2]}\n"
         message += f"• Market Cap Range: ${self.min_market_cap/1e6:.0f}M - ${self.max_market_cap/1e9:.0f}B\n"
         
         if self.is_scanning:
             message += f"\n⚙️ *Currently scanning...*\n"
         
         if self.last_scan_time:
-            next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
             message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
-            message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
+        message += f"\n⏰ Next Scan: {self._format_next_scan_info()}"
+        # Also show the next 3 upcoming scans
+        upcoming = self._upcoming_scans_info(3)
+        if upcoming:
+            message += "\n🗓️ Upcoming:"
+            for s in upcoming:
+                message += f"\n• {s}"
         
         self.send_telegram_message(message, chat_id=chat_id)
     
@@ -291,30 +305,94 @@ class StockSignalBot:
             self.send_telegram_message(f"❌ Error: {str(e)}")
     
     def handle_interval(self, args, chat_id: str = None):
-        """Handle interval command"""
+        """Handle interval command (deprecated)."""
         try:
-            if len(args) != 1:
-                self.send_telegram_message(
-                    "Usage: /interval [hours]\n"
-                    "Example: /interval 2",
-                    chat_id=chat_id
-                )
-                return
-            
-            hours = float(args[0])
-            if hours < 0.5 or hours > 24:
-                self.send_telegram_message("❌ Interval must be between 0.5 and 24 hours.", chat_id=chat_id)
-                return
-            
-            self.scan_interval = int(hours * 3600)
-            
-            message = f"✅ Scan interval updated to {hours:.1f} hours"
+            message = (
+                "ℹ️ 스캔 주기 설정은 더 이상 지원하지 않습니다.\n"
+                "이제 스캔은 미국 시장(ET) 기준 세 번 실행됩니다:\n"
+                "• 프리마켓 중간 06:45 ET\n"
+                "• 본장 중간 12:45 ET\n"
+                "• 애프터마켓 중간 18:00 ET"
+            )
             self.send_telegram_message(message, chat_id=chat_id)
-            
-        except ValueError:
-            self.send_telegram_message("❌ Invalid input. Please use a number.", chat_id=chat_id)
         except Exception as e:
             self.send_telegram_message(f"❌ Error: {str(e)}", chat_id=chat_id)
+
+    # --- Scheduling helpers (US market midpoints in ET) ---
+    def _is_weekday(self, dt_et: datetime) -> bool:
+        return dt_et.weekday() < 5
+
+    def _session_midpoints_et(self, date_et: datetime) -> List[datetime]:
+        tz = ZoneInfo("America/New_York")
+        Y, M, D = date_et.year, date_et.month, date_et.day
+        return [
+            datetime(Y, M, D, 6, 45, tzinfo=tz),  # Pre-market midpoint (04:00-09:30)
+            datetime(Y, M, D, 12, 45, tzinfo=tz), # Regular session midpoint (09:30-16:00)
+            datetime(Y, M, D, 18, 0, tzinfo=tz),  # After-hours midpoint (16:00-20:00)
+        ]
+
+    def _next_scheduled_scan_utc(self, now_utc: Optional[datetime] = None) -> datetime:
+        if now_utc is None:
+            now_utc = datetime.now(timezone.utc)
+        tz = ZoneInfo("America/New_York")
+        now_et = now_utc.astimezone(tz)
+
+        # Search today and up to 7 days ahead
+        for add_days in range(0, 8):
+            day_et = now_et + timedelta(days=add_days)
+            date_et = datetime(day_et.year, day_et.month, day_et.day, tzinfo=tz)
+            if not self._is_weekday(date_et):
+                continue
+            for target_et in self._session_midpoints_et(date_et):
+                target_utc = target_et.astimezone(timezone.utc)
+                if target_utc > now_utc:
+                    return target_utc
+        # Fallback
+        return now_utc + timedelta(hours=1)
+
+    def _format_next_scan_info(self) -> str:
+        """Return next scan time formatted with ET and Local."""
+        nxt = self._next_scheduled_scan_utc()
+        et_tz = ZoneInfo("America/New_York")
+        nxt_et = nxt.astimezone(et_tz)
+        local_tz = datetime.now().astimezone().tzinfo
+        nxt_local = nxt.astimezone(local_tz)
+        local_tzname = nxt_local.tzname() or "Local"
+        return (
+            f"{nxt_et.strftime('%Y-%m-%d %H:%M:%S')} ET | "
+            f"Local: {nxt_local.strftime('%Y-%m-%d %H:%M:%S')} {local_tzname}"
+        )
+
+    def _upcoming_scans_info(self, count: int = 3) -> List[str]:
+        """Return a list of the next N scan times as strings with ET and Local."""
+        res = []
+        now_utc = datetime.now(timezone.utc)
+        next_utc = self._next_scheduled_scan_utc(now_utc)
+        et_tz = ZoneInfo("America/New_York")
+        local_tz = datetime.now().astimezone().tzinfo
+        local_tzname = datetime.now().astimezone().tzname() or "Local"
+        collected = 0
+        cursor = next_utc
+        while collected < count:
+            et_str = cursor.astimezone(et_tz).strftime('%Y-%m-%d %H:%M:%S') + " ET"
+            loc_dt = cursor.astimezone(local_tz)
+            loc_str = loc_dt.strftime('%Y-%m-%d %H:%M:%S') + f" {local_tzname}"
+            res.append(f"{et_str} | Local: {loc_str}")
+            # Advance cursor to just after this time to find the next
+            cursor = self._next_scheduled_scan_utc(cursor + timedelta(seconds=1))
+            collected += 1
+        return res
+
+    def _today_local_schedule_times(self) -> List[str]:
+        """Return today's ET schedule times converted to local HH:MM strings."""
+        et_tz = ZoneInfo("America/New_York")
+        local_tz = datetime.now().astimezone().tzinfo
+        now_et = datetime.now(timezone.utc).astimezone(et_tz)
+        today_et_date = datetime(now_et.year, now_et.month, now_et.day, tzinfo=et_tz)
+        local_times = []
+        for t in self._session_midpoints_et(today_et_date):
+            local_times.append(t.astimezone(local_tz).strftime('%H:%M'))
+        return local_times
     
     def show_history(self, chat_id: str = None):
         """Show signal history"""
@@ -493,15 +571,25 @@ class StockSignalBot:
             message += f"• Signals Found: {self.total_signals}\n"
             message += f"• Stocks Monitored: NASDAQ\n"
             message += f"• API Requests: {self.data_fetcher.fmp_client.request_count}\n"
+            # Include ET and today's local schedule
+            local_times = self._today_local_schedule_times()
+            message += "• Scan Times (ET): 06:45, 12:45, 18:00\n"
+            if len(local_times) == 3:
+                message += f"• Scan Times (Local): {local_times[0]}, {local_times[1]}, {local_times[2]}\n"
             
             market_hours = self.data_fetcher.get_market_hours()
             message += f"\n🏛️ *Market Status:*\n"
             message += f"• {'OPEN' if market_hours.get('isTheMarketOpen') else 'CLOSED'}\n"
             
             if self.last_scan_time:
-                next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
                 message += f"\n⏰ Last Scan: {self.last_scan_time.strftime('%Y-%m-%d %H:%M:%S')}"
-                message += f"\n⏰ Next Scan: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
+            message += f"\n⏰ Next Scan: {self._format_next_scan_info()}"
+            # Upcoming list
+            upcoming = self._upcoming_scans_info(3)
+            if upcoming:
+                message += "\n🗓️ Upcoming:"
+                for s in upcoming:
+                    message += f"\n• {s}"
             
             self.send_telegram_message(message)
             
@@ -576,9 +664,12 @@ class StockSignalBot:
             is_market_open = market_hours.get('isTheMarketOpen', False)
             
             message += "⏰ *다음 스캔 예정*\n"
-            next_scan = scan_end_time + timedelta(seconds=self.scan_interval)
-            message += f"• 다음 스캔: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            message += f"• 주기: {self.scan_interval/3600:.1f}시간\n"
+            message += f"• 다음 스캔: {self._format_next_scan_info()}\n"
+            message += f"• 주기: 고정 스케줄 (ET)\n"
+            # Show next few upcoming slots
+            upcoming = self._upcoming_scans_info(3)
+            if upcoming:
+                message += "• 다음 일정: " + "; ".join(upcoming) + "\n"
             message += f"• 시장 상태: {'🟢 개장' if is_market_open else '🔴 마감'}\n\n"
             
             # Performance summary
@@ -609,9 +700,7 @@ class StockSignalBot:
             message += f"오류: {error_msg[:200]}\n\n"
             message += "봇이 계속 실행 중이며 다음 스캔을 시도합니다.\n"
             
-            if self.last_scan_time:
-                next_scan = self.last_scan_time + timedelta(seconds=self.scan_interval)
-                message += f"\n⏰ 다음 스캔: {next_scan.strftime('%Y-%m-%d %H:%M:%S')}"
+            message += f"\n⏰ 다음 스캔: {self._format_next_scan_info()}"
             
             if requester_chat_id:
                 self.send_telegram_message(message, chat_id=requester_chat_id)
@@ -620,6 +709,31 @@ class StockSignalBot:
             
         except Exception as e:
             logger.error(f"Error sending error summary: {e}")
+
+    def _scheduled_scan_loop(self):
+        """Background loop to trigger scans at ET session midpoints.
+        Ensures immediate scans do not affect this schedule."""
+        logger.info("Starting fixed-time scheduled scan loop (ET midpoints)")
+        while self.is_running:
+            try:
+                now_utc = datetime.now(timezone.utc)
+                next_utc = self._next_scheduled_scan_utc(now_utc)
+                sleep_seconds = max(1, int((next_utc - now_utc).total_seconds()))
+                # Sleep in chunks to allow graceful shutdown
+                while self.is_running and sleep_seconds > 0:
+                    chunk = min(60, sleep_seconds)
+                    time.sleep(chunk)
+                    sleep_seconds -= chunk
+                if not self.is_running:
+                    break
+                if not self.is_scanning:
+                    logger.info(f"Triggering scheduled scan at {datetime.now().isoformat()}")
+                    self.scan_for_signals()
+                else:
+                    logger.info("Scheduled time reached but a scan is in progress; skipping this slot.")
+            except Exception as e:
+                logger.error(f"Error in scheduled scan loop: {e}")
+                time.sleep(30)
     
     def run(self):
         logger.info("=" * 50)
@@ -630,7 +744,13 @@ class StockSignalBot:
         startup_message += "Monitoring NASDAQ stocks for Upper Section patterns using weekly data.\n"
         startup_message += f"• Strategy: Single Peak + Bearish Pattern + EMA Entry\n"
         startup_message += f"• Timeframe: Weekly (1W)\n"
-        startup_message += f"• Scan Interval: Every {self.scan_interval/3600:.1f} hours\n"
+        # Include ET and local schedule times for clarity
+        local_times = self._today_local_schedule_times()
+        startup_message += "• Scan Times (ET): 06:45 / 12:45 / 18:00\n"
+        if len(local_times) == 3:
+            startup_message += f"• Scan Times (Local): {local_times[0]} / {local_times[1]} / {local_times[2]}\n"
+        # Next scan in ET and local
+        startup_message += f"• Next Scan: {self._format_next_scan_info()}\n"
         startup_message += f"• TP/SL: +10% / -5%\n"
         startup_message += "\nType /help to see available commands."
         
@@ -639,14 +759,15 @@ class StockSignalBot:
         # Run initial scan
         self.scan_for_signals()
         
-        # Schedule scans
-        schedule.every(self.scan_interval).seconds.do(self.scan_for_signals)
+        # Start fixed-time scheduled scan loop (ET midpoints)
+        scheduler_thread = threading.Thread(target=self._scheduled_scan_loop, daemon=True)
+        scheduler_thread.start()
         
         # Send status update twice daily
         schedule.every().day.at("09:00").do(self.send_status_update)
         schedule.every().day.at("21:00").do(self.send_status_update)
         
-        logger.info(f"Scheduled scans every {self.scan_interval/3600:.1f} hours")
+        logger.info("Scheduled scans at ET midpoints: 06:45, 12:45, 18:00")
         logger.info("Telegram command polling active. Send /help for commands.")
         
         while self.is_running:
